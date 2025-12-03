@@ -1,0 +1,9 @@
+[package]
+name = "zpl"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+zpl-parser = { version = "0.1", path = "../zpl-parser" }
+zpl-interpreter = { version = "0.1", path = "../zpl-interpreter" }
+zpl-renderer = { version = "0.1", path = "../zpl-renderer" }

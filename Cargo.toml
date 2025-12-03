@@ -1,0 +1,15 @@
+[workspace]
+members = [
+"zpl-parser",
+"zpl-interpreter",
+"zpl-renderer",
+"zpl"
+]
+
+resolver = "3"
+
+[workspace.dependencies]
+nom = "8.0.0"
+tiny-skia ="0.11.4"
+fontdue = "0.9.3"
+image = "0.25.9"
