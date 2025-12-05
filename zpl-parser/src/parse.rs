@@ -149,6 +149,7 @@ pub fn parse_fg(input: &str) -> IResult<&str, ZplFormatCommand> {
 
     let (input, (_, compression_method, _, img_data)) =
         tuple((char(':'), alphanumeric1, char(':'), take(data_bytes)))(input)?;
+    let (_, img_data) = take_until(":")(img_data)?;
     let compression_method = match compression_method {
         "Z64" => CompressionMethod::Zlib,
         _ => return IResult::Err(nom::Err::Error(Error::new(input, ErrorKind::NoneOf))),
@@ -364,8 +365,9 @@ mod tests {
 
     #[test]
     fn parse_gf_test() {
-        let data = "eJytk7ENg0AMRQ8BAinFNenZBMpshdkgK1CnyAp4g2SEG4ESIYLjozr7LkqKmO7JenxsUxhVhWk1sthrVOE+fO+yGLtcwtWbOgT14TqHqDxcwmZH68BAiBr0uShMZhd2lSS6ZnbZXaCVczWbSEUVttMSohNdEeAZoowe2NEovocIQbyQ/YREN1GT76KXeIhduhxECH9DKdce51KL7LwLBQLvcuobHcAsJ3HBthPzynlefSWnuvHsc5HCrryhTG0ovUe97eRNRJfz4b5UJW8VNPrv3f/yp6VccVdm7jqXGd7xtuh/:E957";
-        let input = format!("^GFA,309,988,19,:Z64:{data}^FT");
+        let data = "eJytk7ENg0AMRQ8BAinFNenZBMpshdkgK1CnyAp4g2SEG4ESIYLjozr7LkqKmO7JenxsUxhVhWk1sthrVOE+fO+yGLtcwtWbOgT14TqHqDxcwmZH68BAiBr0uShMZhd2lSS6ZnbZXaCVczWbSEUVttMSohNdEeAZoowe2NEovocIQbyQ/YREN1GT76KXeIhduhxECH9DKdce51KL7LwLBQLvcuobHcAsJ3HBthPzynlefSWnuvHsc5HCrryhTG0ovUe97eRNRJfz4b5UJW8VNPrv3f/yp6VccVdm7jqXGd7xtuh/";
+        let checksum = ":E957";
+        let input = format!("^GFA,309,988,19,:Z64:{data}{checksum}^FT");
         let (remain, zpl) = parse_fg(&input).unwrap();
         assert_eq!(remain, "^FT");
         assert_eq!(
@@ -417,7 +419,7 @@ mod tests {
 
     #[test]
     fn parse_zpl_test_2() {
-        let input = std::fs::read_to_string("../zpl/zpl_real_live.txt").unwrap();
+        let input = std::fs::read_to_string("../zpl/examples/zpl_real_live.txt").unwrap();
         let (remain, commands) = parse_zpl(&input).unwrap();
         assert_eq!(remain, "");
         println!("{commands:?}");

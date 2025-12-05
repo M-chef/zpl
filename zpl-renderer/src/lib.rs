@@ -1,14 +1,15 @@
 use fontdue::Font;
-use tiny_skia::{Color, IntSize, Pixmap, PixmapPaint, Transform};
-use zpl_interpreter::ZplElement;
+use tiny_skia::{Color, IntSize, Mask, Pixmap, PixmapPaint, Transform};
+use zpl_interpreter::{DecodedBitmap, ZplElement, ZplLabel};
 
 pub struct RenderOutput {
     pub png: Vec<u8>,
 }
 
-pub fn render(elements: &[ZplElement], width: u32, height: u32) -> RenderOutput {
+pub fn render(label: &ZplLabel) -> RenderOutput {
     // Create a pixmap
-    let mut pixmap = Pixmap::new(width, height).expect("Failed to create pixmap");
+    let mut pixmap =
+        Pixmap::new(label.width as u32, label.height as u32).expect("Failed to create pixmap");
 
     // White background
     pixmap.fill(Color::from_rgba8(255, 255, 255, 255));
@@ -18,9 +19,7 @@ pub fn render(elements: &[ZplElement], width: u32, height: u32) -> RenderOutput 
     let font_data: &'static [u8] = include_bytes!("../../fonts/arial.ttf");
     let font = Font::from_bytes(font_data as &[u8], fontdue::FontSettings::default()).unwrap();
 
-    println!("{}", elements.len());
-    for el in elements {
-        println!("{el:?}");
+    for el in &label.elements {
         match el {
             ZplElement::Text {
                 x,
@@ -28,16 +27,11 @@ pub fn render(elements: &[ZplElement], width: u32, height: u32) -> RenderOutput 
                 font_size,
                 content,
             } => {
-                draw_text_rasterized(
-                    &mut pixmap,
-                    &font,
-                    *font_size,
-                    *x as i32,
-                    *y as i32,
-                    content,
-                );
+                draw_text_rasterized(&mut pixmap, &font, *font_size, *x, *y, content);
             }
-            ZplElement::Image { x, y, content } => todo!(),
+            ZplElement::Image { x, y, bmp } => {
+                draw_bitmap(&mut pixmap, bmp, *x, *y);
+            }
         }
     }
 
@@ -97,4 +91,33 @@ fn draw_text_rasterized(pixmap: &mut Pixmap, font: &Font, size: f32, x: i32, y: 
 
         pen_x += metrics.advance_width.round() as i32;
     }
+}
+
+pub fn draw_bitmap(target: &mut Pixmap, bmp: &DecodedBitmap, x: i32, y: i32) {
+    let width = bmp.width as u32;
+    let height = bmp.height as u32;
+
+    // Create a pixmap with the bitmap content
+    let mut bitmap_pixmap = Pixmap::new(width, height).unwrap();
+
+    // Fill with black (or whatever color you want for the "1" pixels)
+    bitmap_pixmap.fill(Color::BLACK);
+
+    // Create and apply mask (0 = transparent, 255 = opaque)
+    let mut mask = Mask::new(width, height).unwrap();
+    for (i, &pixel) in bmp.pixels.iter().enumerate() {
+        // ZPL: 0 = white (transparent), 1 = black (opaque)
+        mask.data_mut()[i] = if pixel == 1 { 255 } else { 0 };
+    }
+    bitmap_pixmap.apply_mask(&mask);
+
+    // Draw the bitmap onto the target at position (x, y)
+    target.draw_pixmap(
+        x,
+        y,
+        bitmap_pixmap.as_ref(),
+        &PixmapPaint::default(),
+        Transform::identity(),
+        None,
+    );
 }

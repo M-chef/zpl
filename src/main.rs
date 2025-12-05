@@ -395,7 +395,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut parser = ZplParser::new();
     parser.parse(&zpl)?;
 
-    println!("Parsed commands:");
     for cmd in parser.commands() {
         println!("{:?}", cmd);
     }

@@ -6,8 +6,8 @@ fn main() {
     // simple ZPL
     let zpl = "^FO50,50^FDHello World^FS^FO50,100^FDSecond Line^FS";
     let (_, cmds) = parse_zpl(zpl).unwrap();
-    let elements = interpret(&cmds);
-    let out = render(&elements, 600, 300);
+    let label = interpret(&cmds);
+    let out = render(&label);
     std::fs::write("label.png", out.png).expect("write png");
     println!("Wrote label.png");
 }

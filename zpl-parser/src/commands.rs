@@ -1,13 +1,13 @@
 use nom::error::{Error, ErrorKind};
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum CompressionType {
     Ascii,
     Binary,
     Compressed,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum CompressionMethod {
     None,
     Zlib,
