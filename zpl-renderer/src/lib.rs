@@ -4,7 +4,7 @@ use zpl_interpreter::{DecodedBitmap, ZplElement, ZplLabel};
 use zpl_parser::Justification;
 
 // tb be closer to zebra font
-const ZEBRA_SPACING_CORRECTION: f32 = 0.6;
+const ZEBRA_SPACING_CORRECTION: f32 = 0.9;
 
 pub struct RenderOutput {
     pub png: Vec<u8>,
@@ -21,11 +21,10 @@ pub fn render(label: &ZplLabel) -> RenderOutput {
 
     // Load a TTF font from bytes. For demo purposes we use include_bytes!; replace with your chosen font.
     // This example expects a file at "assets/DejaVuSans.ttf" or you can change to any TTF you have.
-    let font_data: &'static [u8] = include_bytes!("../../fonts/LiberationMono-Bold.ttf");
+    let font_data: &'static [u8] = include_bytes!("../../fonts/AdwaitaSans-Regular.ttf");
     let font = Font::from_bytes(font_data as &[u8], fontdue::FontSettings::default()).unwrap();
 
     for el in &label.elements {
-        dbg!(el);
         match el {
             ZplElement::Text {
                 x,
@@ -44,6 +43,7 @@ pub fn render(label: &ZplLabel) -> RenderOutput {
                     *y,
                     content,
                     *justification,
+                    true,
                 );
             }
             ZplElement::Image { x, y, bmp } => {
@@ -57,7 +57,7 @@ pub fn render(label: &ZplLabel) -> RenderOutput {
 }
 
 fn measure_text_width(font: &Font, font_height: f32, font_width: f32, text: &str) -> f32 {
-    let width_scale = font_width / font_height * ZEBRA_SPACING_CORRECTION;
+    let width_scale = dbg!(font_width / font_height * ZEBRA_SPACING_CORRECTION);
     let mut total_width = 0.0;
 
     for ch in text.chars() {
@@ -77,6 +77,7 @@ fn draw_text_rasterized(
     y: i32,
     text: &str,
     justification: Justification,
+    bold: bool,
 ) {
     // Calculate text width for justification
     let text_width = measure_text_width(font, font_height, font_width, text);
@@ -91,10 +92,13 @@ fn draw_text_rasterized(
     // Calculate scaling factors
     // Use font_height as the base scale for rasterization
     let base_scale = font_height;
-    let width_scale = font_width / font_height; // aspect ratio adjustment
+    let width_scale = dbg!(font_width / font_height * ZEBRA_SPACING_CORRECTION);
 
     let mut pen_x = adjusted_x as f32;
     let pen_y = y as f32;
+
+    // For bold, we'll render multiple times with slight offsets
+    let bold_offsets = if bold { vec![0.0, 0.4, 0.8] } else { vec![0.0] };
 
     for ch in text.chars() {
         let (metrics, bitmap) = font.rasterize(ch, base_scale);
@@ -108,42 +112,41 @@ fn draw_text_rasterized(
         let w = metrics.width as u32;
         let h = metrics.height as u32;
 
-        // Construct RGBA buffer with black color and alpha from bitmap
-        let mut buf = vec![0u8; (w * h * 4) as usize];
-        for row in 0..h {
-            for col in 0..w {
-                let idx = (row * w + col) as usize;
-                let a = bitmap[row as usize * metrics.width + col as usize];
-                let base = idx * 4;
-                buf[base + 0] = 0; // R
-                buf[base + 1] = 0; // G
-                buf[base + 2] = 0; // B
-                buf[base + 3] = a; // A
+        for x_offset in &bold_offsets {
+            // Construct RGBA buffer with black color and alpha from bitmap
+            let mut buf = Vec::with_capacity((w * h * 4) as usize);
+            for &alpha in &bitmap {
+                buf.push(0); // R
+                buf.push(0); // G
+                buf.push(0); // B
+                buf.push(alpha); // A
             }
+
+            let glyph_pixmap = match Pixmap::from_vec(
+                buf,
+                IntSize::from_wh(w, h).expect("Invalid glyph dimensions"),
+            ) {
+                Some(pm) => pm,
+                None => {
+                    pen_x += metrics.advance_width * width_scale;
+                    continue;
+                }
+            };
+
+            // Apply transform with width scaling
+            let glyph_x = pen_x + metrics.xmin as f32 * width_scale + x_offset;
+            let glyph_y = pen_y - (metrics.height as f32 + metrics.ymin as f32);
+            let transform = Transform::from_translate(glyph_x, glyph_y).pre_scale(width_scale, 1.0); // Scale width independently
+
+            pixmap.draw_pixmap(
+                0,
+                0,
+                glyph_pixmap.as_ref(),
+                &PixmapPaint::default(),
+                transform,
+                None,
+            );
         }
-
-        let glyph_pixmap = Pixmap::from_vec(
-            buf,
-            IntSize::from_wh(w, h).expect("Failed to create pixmap"),
-        )
-        .expect("make glyph pixmap");
-
-        // Apply transform with width scaling
-        let transform = Transform::from_translate(
-            pen_x + metrics.xmin as f32 * width_scale,
-            pen_y - (metrics.height as f32 + metrics.ymin as f32),
-        )
-        .pre_scale(width_scale, 1.0); // Scale width independently
-
-        pixmap.draw_pixmap(
-            0,
-            0,
-            glyph_pixmap.as_ref(),
-            &PixmapPaint::default(),
-            transform,
-            None,
-        );
-
         pen_x += metrics.advance_width * width_scale;
     }
 }
