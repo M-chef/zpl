@@ -1,6 +1,10 @@
 use fontdue::Font;
 use tiny_skia::{Color, IntSize, Mask, Pixmap, PixmapPaint, Transform};
 use zpl_interpreter::{DecodedBitmap, ZplElement, ZplLabel};
+use zpl_parser::Justification;
+
+// tb be closer to zebra font
+const ZEBRA_SPACING_CORRECTION: f32 = 0.7;
 
 pub struct RenderOutput {
     pub png: Vec<u8>,
@@ -8,15 +12,16 @@ pub struct RenderOutput {
 
 pub fn render(label: &ZplLabel) -> RenderOutput {
     // Create a pixmap
-    let mut pixmap =
-        Pixmap::new(label.width as u32, label.height as u32).expect("Failed to create pixmap");
+    let width = label.width as u32;
+    let height = label.height as u32;
+    let mut pixmap = Pixmap::new(width, height).expect("Failed to create pixmap");
 
     // White background
     pixmap.fill(Color::from_rgba8(255, 255, 255, 255));
 
     // Load a TTF font from bytes. For demo purposes we use include_bytes!; replace with your chosen font.
     // This example expects a file at "assets/DejaVuSans.ttf" or you can change to any TTF you have.
-    let font_data: &'static [u8] = include_bytes!("../../fonts/arial.ttf");
+    let font_data: &'static [u8] = include_bytes!("../../fonts/LiberationMono-Bold.ttf");
     let font = Font::from_bytes(font_data as &[u8], fontdue::FontSettings::default()).unwrap();
 
     for el in &label.elements {
@@ -24,10 +29,21 @@ pub fn render(label: &ZplLabel) -> RenderOutput {
             ZplElement::Text {
                 x,
                 y,
-                font_size,
+                font_width,
+                font_height,
                 content,
+                justification,
             } => {
-                draw_text_rasterized(&mut pixmap, &font, *font_size, *x, *y, content);
+                draw_text_rasterized(
+                    &mut pixmap,
+                    &font,
+                    *font_height,
+                    *font_width,
+                    *x,
+                    *y,
+                    content,
+                    *justification,
+                );
             }
             ZplElement::Image { x, y, bmp } => {
                 draw_bitmap(&mut pixmap, bmp, *x, *y);
@@ -39,16 +55,51 @@ pub fn render(label: &ZplLabel) -> RenderOutput {
     RenderOutput { png }
 }
 
-fn draw_text_rasterized(pixmap: &mut Pixmap, font: &Font, size: f32, x: i32, y: i32, text: &str) {
-    // naive horizontal layout: iterate through chars, rasterize each glyph and blit
-    let scale = size;
-    let mut pen_x = x;
-    let pen_y = y;
+fn measure_text_width(font: &Font, font_height: f32, font_width: f32, text: &str) -> f32 {
+    let width_scale = font_width / font_height * ZEBRA_SPACING_CORRECTION;
+    let mut total_width = 0.0;
 
     for ch in text.chars() {
-        let (metrics, bitmap) = font.rasterize(ch, scale);
+        let (metrics, _) = font.rasterize(ch, font_height);
+        total_width += metrics.advance_width * width_scale;
+    }
+
+    total_width
+}
+
+fn draw_text_rasterized(
+    pixmap: &mut Pixmap,
+    font: &Font,
+    font_height: f32,
+    font_width: f32,
+    x: i32,
+    y: i32,
+    text: &str,
+    justification: Justification,
+) {
+    // Calculate text width for justification
+    let text_width = measure_text_width(font, font_height, font_width, text);
+
+    // Adjust starting x position based on justification
+    let adjusted_x = match justification {
+        Justification::Left => x as f32,
+        Justification::Right => x as f32 - text_width,
+        Justification::Auto => x as f32 - text_width / 2.0,
+    };
+
+    // Calculate scaling factors
+    // Use font_height as the base scale for rasterization
+    let base_scale = font_height;
+    let width_scale = font_width / font_height; // aspect ratio adjustment
+
+    let mut pen_x = adjusted_x as f32;
+    let pen_y = y as f32;
+
+    for ch in text.chars() {
+        let (metrics, bitmap) = font.rasterize(ch, base_scale);
+
         if metrics.width == 0 || metrics.height == 0 {
-            pen_x += metrics.advance_width.round() as i32;
+            pen_x += metrics.advance_width * width_scale;
             continue;
         }
 
@@ -56,7 +107,7 @@ fn draw_text_rasterized(pixmap: &mut Pixmap, font: &Font, size: f32, x: i32, y: 
         let w = metrics.width as u32;
         let h = metrics.height as u32;
 
-        // tiny-skia expects RGBA pixels; we will construct an RGBA buffer with black color and alpha from bitmap
+        // Construct RGBA buffer with black color and alpha from bitmap
         let mut buf = vec![0u8; (w * h * 4) as usize];
         for row in 0..h {
             for col in 0..w {
@@ -70,16 +121,19 @@ fn draw_text_rasterized(pixmap: &mut Pixmap, font: &Font, size: f32, x: i32, y: 
             }
         }
 
-        // Paint this glyph onto the main pixmap
         let glyph_pixmap = Pixmap::from_vec(
             buf,
             IntSize::from_wh(w, h).expect("Failed to create pixmap"),
         )
         .expect("make glyph pixmap");
+
+        // Apply transform with width scaling
         let transform = Transform::from_translate(
-            pen_x as f32 + metrics.xmin as f32,
-            pen_y as f32 - (metrics.height as i32 as f32 + metrics.ymin as f32),
-        );
+            pen_x + metrics.xmin as f32 * width_scale,
+            pen_y - (metrics.height as f32 + metrics.ymin as f32),
+        )
+        .pre_scale(width_scale, 1.0); // Scale width independently
+
         pixmap.draw_pixmap(
             0,
             0,
@@ -89,7 +143,7 @@ fn draw_text_rasterized(pixmap: &mut Pixmap, font: &Font, size: f32, x: i32, y: 
             None,
         );
 
-        pen_x += metrics.advance_width.round() as i32;
+        pen_x += metrics.advance_width * width_scale;
     }
 }
 

@@ -27,6 +27,26 @@ pub enum Orientation {
     BackRotate, // 270°
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Justification {
+    #[default]
+    Left, // 0
+    Right, // 1
+    Auto,  // 2
+}
+
+impl From<Option<u8>> for Justification {
+    fn from(value: Option<u8>) -> Self {
+        match value {
+            Some(u) if u == 0 => Justification::Left,
+            Some(u) if u == 1 => Justification::Right,
+            Some(u) if u == 2 => Justification::Auto,
+            Some(_) => Justification::Left,
+            None => Justification::Left,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum ZplFormatCommand {
     LabelLength(usize),
@@ -41,12 +61,12 @@ pub enum ZplFormatCommand {
     FieldOrigin {
         x: i32,
         y: i32,
-        justification: u8,
+        justification: Justification,
     },
     FieldTypeset {
         x: i32,
         y: i32,
-        justification: u8,
+        justification: Justification,
     },
     FieldData(String),
     GraficField {

@@ -14,8 +14,9 @@ use nom::{
     sequence::{preceded, tuple},
 };
 
-use crate::commands::{
-    CompressionMethod, CompressionType, GraficData, Orientation, ZplFormatCommand,
+use crate::{
+    Justification,
+    commands::{CompressionMethod, CompressionType, GraficData, Orientation, ZplFormatCommand},
 };
 
 pub fn parse_pw(input: &str) -> IResult<&str, ZplFormatCommand> {
@@ -84,34 +85,24 @@ fn parse_coordinates(input: &str) -> IResult<&str, (i32, i32, Option<u8>)> {
 
 pub fn parse_fo(input: &str) -> IResult<&str, ZplFormatCommand> {
     let (input, (x, y, justification)) = preceded(tag("^FO"), parse_coordinates).parse(input)?;
-    let justification = match justification {
-        Some(u) => u,
-        None => 0,
-    };
-
     Ok((
         input,
         ZplFormatCommand::FieldOrigin {
             x,
             y,
-            justification,
+            justification: justification.into(),
         },
     ))
 }
 
 pub fn parse_ft(input: &str) -> IResult<&str, ZplFormatCommand> {
     let (input, (x, y, justification)) = preceded(tag("^FT"), parse_coordinates).parse(input)?;
-    let justification = match justification {
-        Some(u) => u,
-        None => 0,
-    };
-
     Ok((
         input,
         ZplFormatCommand::FieldTypeset {
             x,
             y,
-            justification,
+            justification: justification.into(),
         },
     ))
 }
@@ -256,6 +247,7 @@ pub fn parse_zpl(input: &str) -> IResult<&str, Vec<ZplFormatCommand>> {
 #[cfg(test)]
 mod tests {
     use crate::{
+        Justification,
         commands::{CompressionMethod, CompressionType, GraficData, Orientation, ZplFormatCommand},
         parse::{
             parse_a, parse_fd, parse_fg, parse_fo, parse_ft, parse_ll, parse_ls, parse_pw,
@@ -313,7 +305,7 @@ mod tests {
             ZplFormatCommand::FieldOrigin {
                 x: 349,
                 y: 327,
-                justification: 0
+                justification: Justification::Left
             }
         );
         let input = "^FO349,327,2^FT";
@@ -324,7 +316,7 @@ mod tests {
             ZplFormatCommand::FieldOrigin {
                 x: 349,
                 y: 327,
-                justification: 2
+                justification: Justification::Auto
             }
         );
     }
@@ -339,7 +331,7 @@ mod tests {
             ZplFormatCommand::FieldTypeset {
                 x: 349,
                 y: 327,
-                justification: 0
+                justification: Justification::Left
             }
         );
         let input = "^FT349,327,2";
@@ -350,7 +342,7 @@ mod tests {
             ZplFormatCommand::FieldTypeset {
                 x: 349,
                 y: 327,
-                justification: 2
+                justification: Justification::Auto
             }
         );
     }
@@ -403,7 +395,7 @@ mod tests {
                 ZplFormatCommand::FieldTypeset {
                     x: 86,
                     y: 78,
-                    justification: 0
+                    justification: Justification::Left
                 },
                 ZplFormatCommand::Font {
                     name: '0',
