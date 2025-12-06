@@ -52,6 +52,11 @@ pub enum ZplFormatCommand {
     LabelLength(usize),
     PrintWidth(usize),
     LabelShift(i32),
+    ChangeFont {
+        name: char,
+        height: usize,
+        width: usize,
+    },
     Font {
         name: char,
         orientation: Orientation,

@@ -4,7 +4,7 @@ use zpl_interpreter::{DecodedBitmap, ZplElement, ZplLabel};
 use zpl_parser::Justification;
 
 // tb be closer to zebra font
-const ZEBRA_SPACING_CORRECTION: f32 = 0.7;
+const ZEBRA_SPACING_CORRECTION: f32 = 0.6;
 
 pub struct RenderOutput {
     pub png: Vec<u8>,
@@ -25,6 +25,7 @@ pub fn render(label: &ZplLabel) -> RenderOutput {
     let font = Font::from_bytes(font_data as &[u8], fontdue::FontSettings::default()).unwrap();
 
     for el in &label.elements {
+        dbg!(el);
         match el {
             ZplElement::Text {
                 x,

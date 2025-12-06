@@ -8,7 +8,7 @@ use nom::{
     character::complete::{
         alpha1, alphanumeric1, char, i32 as parse_i32, u8 as parse_u8, usize as parse_usize,
     },
-    combinator::{map, recognize},
+    combinator::{map, opt, recognize},
     error::{Error, ErrorKind},
     multi::many0,
     sequence::{preceded, tuple},
@@ -37,6 +37,34 @@ pub fn parse_ls(input: &str) -> IResult<&str, ZplFormatCommand> {
     Ok((input, ZplFormatCommand::LabelShift(length)))
 }
 
+fn parse_cf(input: &str) -> IResult<&str, ZplFormatCommand> {
+    let (input, _) = tag("^CF")(input)?;
+    let (input, (name, _, height, _, width)) = tuple((
+        take(1u8),
+        char(','),
+        opt(parse_usize),
+        opt(char(',')),
+        opt(parse_usize),
+    ))(input)?;
+
+    let (height, width) = match (height, width) {
+        (None, None) => return IResult::Err(nom::Err::Error(Error::new(input, ErrorKind::NoneOf))),
+        (None, Some(w)) => (w, w),
+        (Some(h), None) => (h, h),
+        (Some(h), Some(w)) => (h, w),
+    };
+
+    let name = name.chars().next().unwrap_or('A');
+    Ok((
+        input,
+        ZplFormatCommand::ChangeFont {
+            name,
+            height,
+            width,
+        },
+    ))
+}
+
 pub fn parse_a(input: &str) -> IResult<&str, ZplFormatCommand> {
     let (input, _) = tag("^A")(input)?;
 
@@ -49,9 +77,7 @@ pub fn parse_a(input: &str) -> IResult<&str, ZplFormatCommand> {
         parse_usize,
     ))(input)?;
 
-    // let (input, font) = take(1u8).parse(input)?;
     let font = font.chars().next().unwrap_or('A');
-    // let (input, orientation) = take(1u8).parse(input)?;
     let orientation = match orientation {
         "N" => Orientation::Normal,
         "R" => Orientation::Rotate,
@@ -171,17 +197,6 @@ fn parse_command_name(input: &str) -> IResult<&str, &str> {
     .parse(input)
 }
 
-// fn skip_unknown_command(input: &str) -> IResult<&str, ()> {
-//     // 1. Consume the command name
-//     let (input, _) = parse_command_name(input)?;
-
-//     // 2. Consume until next command or end of file
-//     let (remaining, _) = nom::combinator::opt(take_until("^"))
-//         .parse(input)
-//         .map(|(r, _)| (r, ()))?;
-
-//     Ok((remaining, ()))
-// }
 fn skip_unknown_command(input: &str) -> IResult<&str, ()> {
     // 1. Consume the command name
     let (input, _) = parse_command_name(input)?;
@@ -205,6 +220,7 @@ pub fn parse_command(input: &str) -> IResult<&str, ZplFormatCommand> {
         map(parse_ls, |c| c),
         map(parse_pw, |c| c),
         map(parse_fs, |c| c),
+        map(parse_cf, |c| c),
         // add more commands here
     ))
     .parse(input)
@@ -214,17 +230,6 @@ pub fn skip_until_command(input: &str) -> IResult<&str, &str> {
     // stops on ^ or ~
     take_until("^")(input)
 }
-
-// fn parse_zpl_item(input: &str) -> IResult<&str, ZplFormatCommand> {
-//     // Skip anything until a command starts
-//     let (input, _) = nom::combinator::opt(skip_until_command).parse(input)?;
-
-//     parse_command(input)
-// }
-
-// pub fn parse_zpl(input: &str) -> IResult<&str, Vec<ZplFormatCommand>> {
-//     many0(parse_zpl_item).parse(input)
-// }
 
 fn parse_zpl_item(input: &str) -> IResult<&str, Option<ZplFormatCommand>> {
     // Skip anything until a command starts
@@ -250,8 +255,8 @@ mod tests {
         Justification,
         commands::{CompressionMethod, CompressionType, GraficData, Orientation, ZplFormatCommand},
         parse::{
-            parse_a, parse_fd, parse_fg, parse_fo, parse_ft, parse_ll, parse_ls, parse_pw,
-            parse_zpl,
+            parse_a, parse_cf, parse_fd, parse_fg, parse_fo, parse_ft, parse_ll, parse_ls,
+            parse_pw, parse_zpl,
         },
     };
 
@@ -269,6 +274,33 @@ mod tests {
         let (remain, zpl) = parse_pw(input).unwrap();
         assert_eq!(remain, "^LL236");
         assert_eq!(zpl, ZplFormatCommand::PrintWidth(685));
+    }
+
+    #[test]
+    fn parse_cf_test() {
+        let input = "^CF0,60";
+        let (remain, zpl) = parse_cf(input).unwrap();
+        assert_eq!(remain, "");
+        assert_eq!(
+            zpl,
+            ZplFormatCommand::ChangeFont {
+                name: '0',
+                height: 60,
+                width: 60,
+            }
+        );
+
+        let input = "^CF0,60,30";
+        let (remain, zpl) = parse_cf(input).unwrap();
+        assert_eq!(remain, "");
+        assert_eq!(
+            zpl,
+            ZplFormatCommand::ChangeFont {
+                name: '0',
+                height: 60,
+                width: 30,
+            }
+        );
     }
 
     #[test]

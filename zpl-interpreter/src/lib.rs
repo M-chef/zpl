@@ -36,6 +36,7 @@ struct InterpreterState {
     current_justification: Justification,
 }
 
+#[derive(Debug)]
 pub struct ZplLabel {
     pub width: usize,
     pub height: usize,
@@ -95,6 +96,14 @@ pub fn interpret(cmds: &[ZplFormatCommand]) -> ZplLabel {
                 state.current_font_height = *height as f32;
                 state.current_font_width = *width as f32;
             }
+            ZplFormatCommand::ChangeFont {
+                name,
+                height,
+                width,
+            } => {
+                state.current_font_height = *height as f32;
+                state.current_font_width = *width as f32;
+            }
             ZplFormatCommand::GraficField {
                 compression_type,
                 data_bytes,
@@ -123,7 +132,11 @@ pub fn interpret(cmds: &[ZplFormatCommand]) -> ZplLabel {
             }
             ZplFormatCommand::FieldSeparator => {
                 // reset state
-                state = InterpreterState::default()
+                state = InterpreterState {
+                    current_font_height: state.current_font_height,
+                    current_font_width: state.current_font_width,
+                    ..Default::default()
+                }
             }
         }
     }
