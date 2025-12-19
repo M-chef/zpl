@@ -47,6 +47,24 @@ impl From<Option<u8>> for Justification {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Color {
+    #[default]
+    Black,
+    White,
+}
+
+impl From<Option<&str>> for Color {
+    fn from(value: Option<&str>) -> Self {
+        match value {
+            Some(c) if c == "B" => Self::Black,
+            Some(c) if c == "W" => Self::White,
+            Some(_) => Self::Black,
+            None => Self::Black,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum ZplFormatCommand {
     LabelLength(usize),
@@ -74,12 +92,19 @@ pub enum ZplFormatCommand {
         justification: Justification,
     },
     FieldData(String),
-    GraficField {
+    GraphicField {
         compression_type: CompressionType,
         data_bytes: usize,
         total_bytes: usize,
         row_bytes: usize,
         data: GraficData,
+    },
+    GraphicalBox {
+        width: usize,
+        height: usize,
+        thickness: usize,
+        color: Color,
+        rounding: u8,
     },
     FieldSeparator,
 }

@@ -1,7 +1,9 @@
 use fontdue::Font;
-use tiny_skia::{Color, IntSize, Mask, Pixmap, PixmapPaint, Transform};
+use tiny_skia::{
+    Color, IntSize, Mask, Paint, PathBuilder, Pixmap, PixmapPaint, Rect, Stroke, Transform,
+};
 use zpl_interpreter::{DecodedBitmap, ZplElement, ZplLabel};
-use zpl_parser::Justification;
+use zpl_parser::{Color as ZplColor, Justification};
 
 // tb be closer to zebra font
 const ZEBRA_SPACING_CORRECTION: f32 = 0.9;
@@ -46,6 +48,24 @@ pub fn render(label: &ZplLabel) -> RenderOutput {
                     true,
                 );
             }
+            ZplElement::Rectangle {
+                x,
+                y,
+                width,
+                height,
+                thickness,
+                color,
+                rounding,
+            } => draw_rectangle(
+                &mut pixmap,
+                *x as f32,
+                *y as f32,
+                *width as f32,
+                *height as f32,
+                *thickness as f32,
+                *color,
+                *rounding,
+            ),
             ZplElement::Image { x, y, bmp } => {
                 draw_bitmap(&mut pixmap, bmp, *x, *y);
             }
@@ -57,7 +77,7 @@ pub fn render(label: &ZplLabel) -> RenderOutput {
 }
 
 fn measure_text_width(font: &Font, font_height: f32, font_width: f32, text: &str) -> f32 {
-    let width_scale = dbg!(font_width / font_height * ZEBRA_SPACING_CORRECTION);
+    let width_scale = font_width / font_height * ZEBRA_SPACING_CORRECTION;
     let mut total_width = 0.0;
 
     for ch in text.chars() {
@@ -92,7 +112,7 @@ fn draw_text_rasterized(
     // Calculate scaling factors
     // Use font_height as the base scale for rasterization
     let base_scale = font_height;
-    let width_scale = dbg!(font_width / font_height * ZEBRA_SPACING_CORRECTION);
+    let width_scale = font_width / font_height * ZEBRA_SPACING_CORRECTION;
 
     let mut pen_x = adjusted_x as f32;
     let pen_y = y as f32;
@@ -151,7 +171,7 @@ fn draw_text_rasterized(
     }
 }
 
-pub fn draw_bitmap(target: &mut Pixmap, bmp: &DecodedBitmap, x: i32, y: i32) {
+fn draw_bitmap(target: &mut Pixmap, bmp: &DecodedBitmap, x: i32, y: i32) {
     let width = bmp.width as u32;
     let height = bmp.height as u32;
 
@@ -178,4 +198,46 @@ pub fn draw_bitmap(target: &mut Pixmap, bmp: &DecodedBitmap, x: i32, y: i32) {
         Transform::identity(),
         None,
     );
+}
+
+fn draw_rectangle(
+    pixmap: &mut Pixmap,
+    x: f32,
+    y: f32,
+    width: f32,
+    height: f32,
+    thickness: f32,
+    zpl_color: ZplColor,
+    rounding: u8,
+) {
+    let rect = Rect::from_xywh(x, y, width, height).unwrap();
+    let inset = dbg!(thickness / 2.0);
+
+    // thickness from zpl is not equal to stroke width
+    // for thickness value equally to width and height this would lead
+    // to a single point rect (i.e. (x: 1, y: 1, widh: 1, height: 1), not be drawn)
+    // hence we must correct the inset in such cases
+    // TODO: catch this earlier in the interpreter
+    let inset = match inset >= width / 2. && inset >= height / 2. {
+        true => inset - 0.1,
+        false => inset,
+    };
+    let rect = rect.inset(inset, inset).unwrap();
+
+    let mut pb = PathBuilder::new();
+    pb.push_rect(rect);
+    let path = pb.finish().unwrap();
+
+    let mut paint = Paint::default();
+    match zpl_color {
+        ZplColor::Black => paint.set_color_rgba8(0, 0, 0, 255),
+        ZplColor::White => paint.set_color_rgba8(255, 255, 255, 255),
+    }
+
+    let mut stroke = Stroke::default();
+    stroke.width = thickness;
+
+    let transform = Transform::default();
+
+    pixmap.stroke_path(&path, &paint, &stroke, transform, None);
 }

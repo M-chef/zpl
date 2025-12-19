@@ -15,7 +15,7 @@ use nom::{
 };
 
 use crate::{
-    Justification,
+    Color, Justification,
     commands::{CompressionMethod, CompressionType, GraficData, Orientation, ZplFormatCommand},
 };
 
@@ -178,12 +178,45 @@ pub fn parse_fg(input: &str) -> IResult<&str, ZplFormatCommand> {
 
     Ok((
         input,
-        ZplFormatCommand::GraficField {
+        ZplFormatCommand::GraphicField {
             compression_type,
             data_bytes,
             total_bytes,
             row_bytes,
             data,
+        },
+    ))
+}
+
+fn parse_gb(input: &str) -> IResult<&str, ZplFormatCommand> {
+    let (input, _) = tag("^GB")(input)?;
+    let (input, graphical_box) = take_until("^FS")(input)?;
+    let (_, (width, _, height, _, thickness, _, color, _, rounding)) = tuple((
+        opt(parse_usize),
+        char(','),
+        opt(parse_usize),
+        char(','),
+        opt(parse_usize),
+        opt(char(',')),
+        opt(alpha1),
+        opt(char(',')),
+        opt(parse_u8),
+    ))(graphical_box)?;
+
+    let thickness = thickness.unwrap_or(1);
+    let width = width.unwrap_or(thickness);
+    let height = height.unwrap_or(thickness);
+    let color: Color = color.into();
+    let rounding = rounding.unwrap_or(0);
+
+    Ok((
+        input,
+        ZplFormatCommand::GraphicalBox {
+            width,
+            height,
+            thickness,
+            color,
+            rounding,
         },
     ))
 }
@@ -221,6 +254,7 @@ pub fn parse_command(input: &str) -> IResult<&str, ZplFormatCommand> {
         map(parse_pw, |c| c),
         map(parse_fs, |c| c),
         map(parse_cf, |c| c),
+        map(parse_gb, |c| c),
         // add more commands here
     ))
     .parse(input)
@@ -252,11 +286,11 @@ pub fn parse_zpl(input: &str) -> IResult<&str, Vec<ZplFormatCommand>> {
 #[cfg(test)]
 mod tests {
     use crate::{
-        Justification,
+        Color, Justification,
         commands::{CompressionMethod, CompressionType, GraficData, Orientation, ZplFormatCommand},
         parse::{
-            parse_a, parse_cf, parse_fd, parse_fg, parse_fo, parse_ft, parse_ll, parse_ls,
-            parse_pw, parse_zpl,
+            parse_a, parse_cf, parse_fd, parse_fg, parse_fo, parse_ft, parse_gb, parse_ll,
+            parse_ls, parse_pw, parse_zpl,
         },
     };
 
@@ -396,7 +430,7 @@ mod tests {
         assert_eq!(remain, "^FT");
         assert_eq!(
             zpl,
-            ZplFormatCommand::GraficField {
+            ZplFormatCommand::GraphicField {
                 compression_type: CompressionType::Ascii,
                 data_bytes: 309,
                 total_bytes: 988,
@@ -405,6 +439,23 @@ mod tests {
                     compression_method: CompressionMethod::Zlib,
                     data: data.into()
                 }
+            }
+        );
+    }
+
+    #[test]
+    fn parse_gb_test() {
+        let input = format!("^GB100,100,100^FS");
+        let (remain, zpl) = parse_gb(&input).unwrap();
+        assert_eq!(remain, "^FS");
+        assert_eq!(
+            zpl,
+            ZplFormatCommand::GraphicalBox {
+                width: 100,
+                height: 100,
+                thickness: 100,
+                color: Color::Black,
+                rounding: 0,
             }
         );
     }

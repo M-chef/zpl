@@ -1,6 +1,8 @@
 mod decode_image;
 
-use zpl_parser::{Justification, ZplFormatCommand};
+use std::os::linux::raw::stat;
+
+use zpl_parser::{Color, Justification, ZplFormatCommand};
 
 pub use crate::decode_image::DecodedBitmap;
 use crate::decode_image::decode_zpl_graphic;
@@ -19,6 +21,15 @@ pub enum ZplElement {
         font_height: f32,
         content: String,
         justification: Justification,
+    },
+    Rectangle {
+        x: i32,
+        y: i32,
+        width: i32,
+        height: i32,
+        thickness: i32,
+        color: Color,
+        rounding: u8,
     },
     Image {
         x: i32,
@@ -104,7 +115,7 @@ pub fn interpret(cmds: &[ZplFormatCommand]) -> ZplLabel {
                 state.current_font_height = *height as f32;
                 state.current_font_width = *width as f32;
             }
-            ZplFormatCommand::GraficField {
+            ZplFormatCommand::GraphicField {
                 compression_type,
                 data_bytes,
                 total_bytes,
@@ -127,6 +138,24 @@ pub fn interpret(cmds: &[ZplFormatCommand]) -> ZplLabel {
                     x: state.current_x,
                     y: state.current_y,
                     bmp,
+                };
+                elements.push(elem)
+            }
+            ZplFormatCommand::GraphicalBox {
+                width,
+                height,
+                thickness,
+                color,
+                rounding,
+            } => {
+                let elem = ZplElement::Rectangle {
+                    x: state.current_x,
+                    y: state.current_y,
+                    width: *width as i32,
+                    height: *height as i32,
+                    thickness: *thickness as i32,
+                    color: *color,
+                    rounding: *rounding,
                 };
                 elements.push(elem)
             }
