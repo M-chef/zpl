@@ -221,6 +221,11 @@ fn parse_gb(input: &str) -> IResult<&str, ZplFormatCommand> {
     ))
 }
 
+fn parse_fr(input: &str) -> IResult<&str, ZplFormatCommand> {
+    let (input, _) = tag("^FR")(input)?;
+    Ok((input, ZplFormatCommand::Inverted))
+}
+
 fn parse_command_name(input: &str) -> IResult<&str, &str> {
     // Matches e.g. "^FO", "^FD", "~DG", "^XYZ"
     recognize(preceded(
@@ -255,6 +260,7 @@ pub fn parse_command(input: &str) -> IResult<&str, ZplFormatCommand> {
         map(parse_fs, |c| c),
         map(parse_cf, |c| c),
         map(parse_gb, |c| c),
+        map(parse_fr, |c| c),
         // add more commands here
     ))
     .parse(input)
@@ -289,8 +295,8 @@ mod tests {
         Color, Justification,
         commands::{CompressionMethod, CompressionType, GraficData, Orientation, ZplFormatCommand},
         parse::{
-            parse_a, parse_cf, parse_fd, parse_fg, parse_fo, parse_ft, parse_gb, parse_ll,
-            parse_ls, parse_pw, parse_zpl,
+            parse_a, parse_cf, parse_fd, parse_fg, parse_fo, parse_fr, parse_ft, parse_gb,
+            parse_ll, parse_ls, parse_pw, parse_zpl,
         },
     };
 
@@ -458,6 +464,14 @@ mod tests {
                 rounding: 0,
             }
         );
+    }
+
+    #[test]
+    fn parse_fr_test() {
+        let input = format!("^FR^FDTest^FS");
+        let (remain, zpl) = parse_fr(&input).unwrap();
+        assert_eq!(remain, "^FDTest^FS");
+        assert_eq!(zpl, ZplFormatCommand::Inverted);
     }
 
     #[test]

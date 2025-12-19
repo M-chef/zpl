@@ -1,12 +1,15 @@
+use std::iter;
+
 use fontdue::Font;
 use tiny_skia::{
-    Color, IntSize, Mask, Paint, PathBuilder, Pixmap, PixmapPaint, Rect, Stroke, Transform,
+    Color, ColorU8, IntSize, Mask, Paint, PathBuilder, Pixmap, PixmapPaint, PremultipliedColorU8,
+    Rect, Stroke, Transform,
 };
 use zpl_interpreter::{DecodedBitmap, ZplElement, ZplLabel};
 use zpl_parser::{Color as ZplColor, Justification};
 
 // tb be closer to zebra font
-const ZEBRA_SPACING_CORRECTION: f32 = 0.9;
+const ZEBRA_SPACING_CORRECTION: f32 = 0.85;
 
 pub struct RenderOutput {
     pub png: Vec<u8>,
@@ -19,7 +22,7 @@ pub fn render(label: &ZplLabel) -> RenderOutput {
     let mut pixmap = Pixmap::new(width, height).expect("Failed to create pixmap");
 
     // White background
-    pixmap.fill(Color::from_rgba8(255, 255, 255, 255));
+    pixmap.fill(Color::WHITE);
 
     // Load a TTF font from bytes. For demo purposes we use include_bytes!; replace with your chosen font.
     // This example expects a file at "assets/DejaVuSans.ttf" or you can change to any TTF you have.
@@ -35,6 +38,7 @@ pub fn render(label: &ZplLabel) -> RenderOutput {
                 font_height,
                 content,
                 justification,
+                inverted,
             } => {
                 draw_text_rasterized(
                     &mut pixmap,
@@ -45,7 +49,8 @@ pub fn render(label: &ZplLabel) -> RenderOutput {
                     *y,
                     content,
                     *justification,
-                    true,
+                    false,
+                    *inverted,
                 );
             }
             ZplElement::Rectangle {
@@ -56,6 +61,7 @@ pub fn render(label: &ZplLabel) -> RenderOutput {
                 thickness,
                 color,
                 rounding,
+                inverted,
             } => draw_rectangle(
                 &mut pixmap,
                 *x as f32,
@@ -65,6 +71,7 @@ pub fn render(label: &ZplLabel) -> RenderOutput {
                 *thickness as f32,
                 *color,
                 *rounding,
+                *inverted,
             ),
             ZplElement::Image { x, y, bmp } => {
                 draw_bitmap(&mut pixmap, bmp, *x, *y);
@@ -98,6 +105,7 @@ fn draw_text_rasterized(
     text: &str,
     justification: Justification,
     bold: bool,
+    inverted: bool,
 ) {
     // Calculate text width for justification
     let text_width = measure_text_width(font, font_height, font_width, text);
@@ -124,7 +132,7 @@ fn draw_text_rasterized(
         let (metrics, bitmap) = font.rasterize(ch, base_scale);
 
         if metrics.width == 0 || metrics.height == 0 {
-            pen_x += metrics.advance_width * width_scale;
+            pen_x += metrics.advance_width; // * width_scale;
             continue;
         }
 
@@ -148,24 +156,70 @@ fn draw_text_rasterized(
             ) {
                 Some(pm) => pm,
                 None => {
-                    pen_x += metrics.advance_width * width_scale;
+                    pen_x += metrics.advance_width; // * width_scale;
                     continue;
                 }
             };
 
+            // if inverted {
+            //     draw_field_with_fr(pixmap, x, y, draw_fn);
+            // }
+
             // Apply transform with width scaling
-            let glyph_x = pen_x + metrics.xmin as f32 * width_scale + x_offset;
+            let glyph_x = pen_x + metrics.xmin as f32 + x_offset; //* width_scale + x_offset;
             let glyph_y = pen_y - (metrics.height as f32 + metrics.ymin as f32);
             let transform = Transform::from_translate(glyph_x, glyph_y).pre_scale(width_scale, 1.0); // Scale width independently
 
-            pixmap.draw_pixmap(
-                0,
-                0,
-                glyph_pixmap.as_ref(),
-                &PixmapPaint::default(),
-                transform,
-                None,
-            );
+            if inverted {
+                draw_field_with_fr(pixmap, x, y, |pm| {
+                    pm.draw_pixmap(
+                        0,
+                        0,
+                        glyph_pixmap.as_ref(),
+                        &PixmapPaint::default(),
+                        transform,
+                        None,
+                    );
+                });
+            } else {
+                pixmap.draw_pixmap(
+                    0,
+                    0,
+                    glyph_pixmap.as_ref(),
+                    &PixmapPaint::default(),
+                    transform,
+                    None,
+                );
+            }
+
+            //     if inverted {
+            //         draw_field_with_fr(
+            //             pixmap,
+            //             glyph_x as i32,
+            //             glyph_y as i32,
+            //             metrics.width as u32,
+            //             metrics.height as u32,
+            //             |pm| {
+            //                 pm.draw_pixmap(
+            //                     0,
+            //                     0,
+            //                     glyph_pixmap.as_ref(),
+            //                     &PixmapPaint::default(),
+            //                     transform,
+            //                     None,
+            //                 );
+            //             },
+            //         );
+            //     } else {
+            //         pixmap.draw_pixmap(
+            //             0,
+            //             0,
+            //             glyph_pixmap.as_ref(),
+            //             &PixmapPaint::default(),
+            //             transform,
+            //             None,
+            //         );
+            //     }
         }
         pen_x += metrics.advance_width * width_scale;
     }
@@ -209,9 +263,10 @@ fn draw_rectangle(
     thickness: f32,
     zpl_color: ZplColor,
     rounding: u8,
+    inverted: bool,
 ) {
     let rect = Rect::from_xywh(x, y, width, height).unwrap();
-    let inset = dbg!(thickness / 2.0);
+    let inset = thickness / 2.0;
 
     // thickness from zpl is not equal to stroke width
     // for thickness value equally to width and height this would lead
@@ -237,7 +292,56 @@ fn draw_rectangle(
     let mut stroke = Stroke::default();
     stroke.width = thickness;
 
-    let transform = Transform::default();
-
-    pixmap.stroke_path(&path, &paint, &stroke, transform, None);
+    if inverted {
+        draw_field_with_fr(pixmap, x as i32, y as i32, |pm| {
+            pm.stroke_path(&path, &paint, &stroke, Transform::identity(), None);
+        });
+    } else {
+        pixmap.stroke_path(&path, &paint, &stroke, Transform::identity(), None);
+    }
 }
+
+fn draw_field_with_fr(target: &mut Pixmap, x: i32, y: i32, draw_fn: impl FnOnce(&mut Pixmap)) {
+    // 1. Render field to mask
+    let mut mask = Pixmap::new(target.width(), target.height()).unwrap();
+    draw_fn(&mut mask);
+
+    // 2. Apply reverse print against destination
+    invert_field(target, &mask, x, y);
+}
+
+fn invert_field(target: &mut Pixmap, mask: &Pixmap, x: i32, y: i32) {
+    let white_premultiplied = Color::WHITE.premultiply().to_color_u8();
+    let black_premultiplied = Color::BLACK.premultiply().to_color_u8();
+
+    let h_range = 0..target.height();
+    let w_range = 0..target.width();
+
+    for x in w_range {
+        for y in h_range.clone() {
+            let mask_pixel = mask.pixel(x as u32, y as u32).unwrap();
+            let dest_pixel = target.pixel(x as u32, y as u32).unwrap();
+
+            if mask_pixel == black_premultiplied {
+                let dest_color = if dest_pixel == white_premultiplied {
+                    black_premultiplied
+                } else {
+                    white_premultiplied
+                };
+
+                let idx = target
+                    .width()
+                    .checked_mul(y as u32)
+                    .unwrap()
+                    .checked_add(x as u32)
+                    .unwrap() as usize;
+
+                if let Some(p) = target.pixels_mut().get_mut(idx) {
+                    *p = dest_color
+                }
+            }
+        }
+    }
+}
+//     }
+// }

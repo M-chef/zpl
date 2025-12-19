@@ -1,7 +1,5 @@
 mod decode_image;
 
-use std::os::linux::raw::stat;
-
 use zpl_parser::{Color, Justification, ZplFormatCommand};
 
 pub use crate::decode_image::DecodedBitmap;
@@ -21,6 +19,7 @@ pub enum ZplElement {
         font_height: f32,
         content: String,
         justification: Justification,
+        inverted: bool,
     },
     Rectangle {
         x: i32,
@@ -30,6 +29,7 @@ pub enum ZplElement {
         thickness: i32,
         color: Color,
         rounding: u8,
+        inverted: bool,
     },
     Image {
         x: i32,
@@ -45,6 +45,7 @@ struct InterpreterState {
     current_font_height: f32,
     current_font_width: f32,
     current_justification: Justification,
+    inverted: bool,
 }
 
 #[derive(Debug)]
@@ -92,6 +93,7 @@ pub fn interpret(cmds: &[ZplFormatCommand]) -> ZplLabel {
                     font_height: state.current_font_height,
                     content: text.clone(),
                     justification: state.current_justification,
+                    inverted: state.inverted,
                 };
                 elements.push(elem)
             }
@@ -156,9 +158,11 @@ pub fn interpret(cmds: &[ZplFormatCommand]) -> ZplLabel {
                     thickness: *thickness as i32,
                     color: *color,
                     rounding: *rounding,
+                    inverted: state.inverted,
                 };
                 elements.push(elem)
             }
+            ZplFormatCommand::Inverted => state.inverted = true,
             ZplFormatCommand::FieldSeparator => {
                 // reset state
                 state = InterpreterState {

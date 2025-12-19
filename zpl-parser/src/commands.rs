@@ -106,6 +106,7 @@ pub enum ZplFormatCommand {
         color: Color,
         rounding: u8,
     },
+    Inverted,
     FieldSeparator,
 }
 
