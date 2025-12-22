@@ -83,16 +83,32 @@ pub fn render(label: &ZplLabel) -> RenderOutput {
     RenderOutput { png }
 }
 
-fn measure_text_width(font: &Font, font_height: f32, font_width: f32, text: &str) -> f32 {
+pub struct TextFieldProps {
+    width: f32,
+    min_y: f32,
+}
+
+fn measure_text_width(
+    font: &Font,
+    font_height: f32,
+    font_width: f32,
+    text: &str,
+) -> TextFieldProps {
     let width_scale = font_width / font_height * ZEBRA_SPACING_CORRECTION;
     let mut total_width = 0.0;
+    let mut min_y: f32 = 0.0;
 
     for ch in text.chars() {
         let (metrics, _) = font.rasterize(ch, font_height);
         total_width += metrics.advance_width * width_scale;
+        let top = -(metrics.height as f32 + metrics.ymin as f32);
+        min_y = min_y.min(top)
     }
 
-    total_width
+    TextFieldProps {
+        width: total_width,
+        min_y,
+    }
 }
 
 fn draw_text_rasterized(
@@ -108,13 +124,13 @@ fn draw_text_rasterized(
     inverted: bool,
 ) {
     // Calculate text width for justification
-    let text_width = measure_text_width(font, font_height, font_width, text);
+    let textfield_props = measure_text_width(font, font_height, font_width, text);
 
     // Adjust starting x position based on justification
     let adjusted_x = match justification {
         Justification::Left => x as f32,
-        Justification::Right => x as f32 - text_width,
-        Justification::Auto => x as f32 - text_width / 2.0,
+        Justification::Right => x as f32 - textfield_props.width,
+        Justification::Auto => x as f32 - textfield_props.width / 2.0,
     };
 
     // Calculate scaling factors
@@ -123,7 +139,7 @@ fn draw_text_rasterized(
     let width_scale = font_width / font_height * ZEBRA_SPACING_CORRECTION;
 
     let mut pen_x = adjusted_x as f32;
-    let pen_y = y as f32;
+    let pen_y = y as f32 - textfield_props.min_y;
 
     // For bold, we'll render multiple times with slight offsets
     let bold_offsets = if bold { vec![0.0, 0.4, 0.8] } else { vec![0.0] };
@@ -167,12 +183,14 @@ fn draw_text_rasterized(
 
             // Apply transform with width scaling
             let glyph_x = pen_x + metrics.xmin as f32 + x_offset; //* width_scale + x_offset;
-            let glyph_y = pen_y - (metrics.height as f32 + metrics.ymin as f32);
+            let glyph_y = pen_y - metrics.height as f32 - metrics.ymin as f32;
+            // let glyph_y = pen_y + metrics.ascent - metrics.ymin as f32;
             let transform = Transform::from_translate(glyph_x, glyph_y).pre_scale(width_scale, 1.0); // Scale width independently
 
             if inverted {
                 draw_field_with_fr(pixmap, x, y, |pm| {
                     pm.draw_pixmap(
+                        // metrics.height.strict_neg() as i32,
                         0,
                         0,
                         glyph_pixmap.as_ref(),

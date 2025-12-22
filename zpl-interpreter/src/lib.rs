@@ -39,13 +39,36 @@ pub enum ZplElement {
 }
 
 #[derive(Default)]
+enum Origin {
+    #[default]
+    Top,
+    Bottom,
+}
+
+#[derive(Default)]
 struct InterpreterState {
     current_x: i32,
     current_y: i32,
+    current_origin: Origin,
     current_font_height: f32,
     current_font_width: f32,
     current_justification: Justification,
     inverted: bool,
+}
+
+impl InterpreterState {
+    pub fn current_x(&self) -> i32 {
+        self.current_x
+    }
+
+    pub fn current_y(&self, height: i32) -> i32 {
+        let offset = match self.current_origin {
+            Origin::Top => 0,
+            Origin::Bottom => height,
+        };
+
+        self.current_y - offset
+    }
 }
 
 #[derive(Debug)]
@@ -83,12 +106,13 @@ pub fn interpret(cmds: &[ZplFormatCommand]) -> ZplLabel {
             } => {
                 state.current_x = *x;
                 state.current_y = *y;
+                state.current_origin = Origin::Bottom;
                 state.current_justification = *justification;
             }
             ZplFormatCommand::FieldData(text) => {
                 let elem = ZplElement::Text {
-                    x: state.current_x,
-                    y: state.current_y,
+                    x: state.current_x(),
+                    y: state.current_y(state.current_font_height as i32),
                     font_width: state.current_font_width,
                     font_height: state.current_font_height,
                     content: text.clone(),
@@ -137,8 +161,8 @@ pub fn interpret(cmds: &[ZplFormatCommand]) -> ZplLabel {
                     _ => DecodedBitmap::default(),
                 };
                 let elem = ZplElement::Image {
-                    x: state.current_x,
-                    y: state.current_y,
+                    x: state.current_x(),
+                    y: state.current_y(height as i32),
                     bmp,
                 };
                 elements.push(elem)
@@ -151,8 +175,8 @@ pub fn interpret(cmds: &[ZplFormatCommand]) -> ZplLabel {
                 rounding,
             } => {
                 let elem = ZplElement::Rectangle {
-                    x: state.current_x,
-                    y: state.current_y,
+                    x: state.current_x(),
+                    y: state.current_y(*height as i32),
                     width: *width as i32,
                     height: *height as i32,
                     thickness: *thickness as i32,
@@ -180,10 +204,6 @@ pub fn interpret(cmds: &[ZplFormatCommand]) -> ZplLabel {
         elements,
     }
 }
-
-// fn check_label_bounds(elem: ZplElement, width: &mut usize, height: &mut usize) -> _ {
-//     width = max(width, elem.)
-// }
 
 #[cfg(test)]
 mod tests {
