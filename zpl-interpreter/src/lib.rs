@@ -1,13 +1,23 @@
+mod barcode;
 mod decode_image;
 
-use zpl_parser::{Color, Justification, ZplFormatCommand};
+use zpl_parser::{BarcodeType, Color, Justification, ZplFormatCommand};
 
 pub use crate::decode_image::DecodedBitmap;
-use crate::decode_image::decode_zpl_graphic;
+use crate::{barcode::bitmap_from_barcode, decode_image::decode_zpl_graphic};
 
 pub enum FieldAlignment {
     LeftTop,
     LeftBottom,
+}
+
+#[derive(Debug, Clone)]
+pub struct BarcodeContent {
+    pub x: i32,
+    pub y: i32,
+    pub relative_y: f32,
+    pub font_width: f32,
+    pub text: String,
 }
 
 #[derive(Debug, Clone)]
@@ -36,6 +46,12 @@ pub enum ZplElement {
         y: i32,
         bmp: DecodedBitmap,
     },
+    Barcode {
+        x: i32,
+        y: i32,
+        content: Option<BarcodeContent>,
+        bitmap: DecodedBitmap,
+    },
 }
 
 #[derive(Default)]
@@ -43,6 +59,18 @@ enum Origin {
     #[default]
     Top,
     Bottom,
+}
+
+// #[derive(Clone, Copy)]
+// struct BarcodeState {
+//     r#type: BarcodeType,
+//     height: i32,
+// }
+
+struct BarcodeConfig {
+    width: u8,
+    width_ratio: f32,
+    height: usize,
 }
 
 #[derive(Default)]
@@ -54,6 +82,8 @@ struct InterpreterState {
     current_font_width: f32,
     current_justification: Justification,
     inverted: bool,
+    barcode_type: Option<BarcodeType>,
+    barcode_config: Option<BarcodeConfig>,
 }
 
 impl InterpreterState {
@@ -85,10 +115,10 @@ pub fn interpret(cmds: &[ZplFormatCommand]) -> ZplLabel {
         ..Default::default()
     };
     let mut elements = Vec::new();
-    let mut width = 0;
-    let mut height = 0;
+    let mut width = 0usize;
+    let mut height = 0usize;
 
-    for cmd in cmds {
+    for cmd in dbg!(cmds) {
         match cmd {
             ZplFormatCommand::FieldOrigin {
                 x,
@@ -110,14 +140,43 @@ pub fn interpret(cmds: &[ZplFormatCommand]) -> ZplLabel {
                 state.current_justification = *justification;
             }
             ZplFormatCommand::FieldData(text) => {
-                let elem = ZplElement::Text {
-                    x: state.current_x(),
-                    y: state.current_y(state.current_font_height as i32),
-                    font_width: state.current_font_width,
-                    font_height: state.current_font_height,
-                    content: text.clone(),
-                    justification: state.current_justification,
-                    inverted: state.inverted,
+                let mut content = text.clone();
+                let elem = if let Some(barcode) = state.barcode_type
+                    && let Ok(bitmap) =
+                        bitmap_from_barcode(state.barcode_config.as_ref(), barcode, &mut content)
+                {
+                    let height = barcode.height().unwrap_or(
+                        state
+                            .barcode_config
+                            .as_ref()
+                            .map(|config| config.height)
+                            .unwrap_or(10),
+                    );
+                    let relative_y = barcode.relative_text_ypos();
+                    let font_width = (bitmap.width / content.chars().count()) as f32;
+                    let content = barcode.show_content().then_some(BarcodeContent {
+                        x: state.current_x(),
+                        y: state.current_y(height as i32) + height as i32,
+                        text: content,
+                        font_width,
+                        relative_y,
+                    });
+                    ZplElement::Barcode {
+                        x: state.current_x(),
+                        y: state.current_y(height as i32),
+                        content,
+                        bitmap,
+                    }
+                } else {
+                    ZplElement::Text {
+                        x: state.current_x(),
+                        y: state.current_y(state.current_font_height as i32),
+                        font_width: state.current_font_width,
+                        font_height: state.current_font_height,
+                        content,
+                        justification: state.current_justification,
+                        inverted: state.inverted,
+                    }
                 };
                 elements.push(elem)
             }
@@ -187,6 +246,18 @@ pub fn interpret(cmds: &[ZplFormatCommand]) -> ZplLabel {
                 elements.push(elem)
             }
             ZplFormatCommand::Inverted => state.inverted = true,
+            ZplFormatCommand::BarcodeConfig {
+                width,
+                width_ratio,
+                height,
+            } => {
+                state.barcode_config = Some(BarcodeConfig {
+                    width: *width,
+                    width_ratio: *width_ratio,
+                    height: *height,
+                })
+            }
+            ZplFormatCommand::Barcode(barcode_type) => state.barcode_type = Some(*barcode_type),
             ZplFormatCommand::FieldSeparator => {
                 // reset state
                 state = InterpreterState {

@@ -1,5 +1,5 @@
 use base64::{Engine, engine::general_purpose};
-use zpl_parser::{CompressionMethod, CompressionType, ZplFormatCommand};
+use zpl_parser::CompressionMethod;
 
 #[derive(Debug, Clone, Default)]
 pub struct DecodedBitmap {

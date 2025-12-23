@@ -8,4 +8,4 @@ zpl-parser = { path = "../zpl-parser" }
 zpl-interpreter = { path = "../zpl-interpreter" }
 tiny-skia = { workspace = true }
 fontdue = { workspace = true }
-image = { workspace = true }
+# image = { workspace = true }

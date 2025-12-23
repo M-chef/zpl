@@ -76,6 +76,25 @@ pub fn render(label: &ZplLabel) -> RenderOutput {
             ZplElement::Image { x, y, bmp } => {
                 draw_bitmap(&mut pixmap, bmp, *x, *y);
             }
+            ZplElement::Barcode {
+                x,
+                y,
+                content,
+                bitmap,
+            } => {
+                draw_bitmap(&mut pixmap, bitmap, *x, *y);
+                if let Some(content) = content {
+                    draw_barcode_text(
+                        &mut pixmap,
+                        &font,
+                        content.font_width,
+                        &content.text,
+                        content.x,
+                        content.y,
+                        content.relative_y,
+                    );
+                }
+            }
         }
     }
 
@@ -83,12 +102,37 @@ pub fn render(label: &ZplLabel) -> RenderOutput {
     RenderOutput { png }
 }
 
+fn draw_barcode_text(
+    pixmap: &mut Pixmap,
+    font: &Font,
+    font_width: f32,
+    text: &str,
+    x: i32,
+    y: i32,
+    relative_y: f32,
+) {
+    let font_height = font_width;
+    let justification = Justification::Left;
+    draw_text_rasterized(
+        pixmap,
+        font,
+        font_height,
+        font_width,
+        x,
+        y,
+        text,
+        justification,
+        false,
+        false,
+    );
+}
+
 pub struct TextFieldProps {
     width: f32,
     min_y: f32,
 }
 
-fn measure_text_width(
+fn measure_text_dimensions(
     font: &Font,
     font_height: f32,
     font_width: f32,
@@ -124,7 +168,7 @@ fn draw_text_rasterized(
     inverted: bool,
 ) {
     // Calculate text width for justification
-    let textfield_props = measure_text_width(font, font_height, font_width, text);
+    let textfield_props = measure_text_dimensions(font, font_height, font_width, text);
 
     // Adjust starting x position based on justification
     let adjusted_x = match justification {

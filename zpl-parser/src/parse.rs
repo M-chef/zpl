@@ -11,11 +11,12 @@ use nom::{
     combinator::{map, opt, recognize},
     error::{Error, ErrorKind},
     multi::many0,
+    number::complete::float as parse_float,
     sequence::{preceded, tuple},
 };
 
 use crate::{
-    Color, Justification,
+    BarcodeType, Code128Mode, Color, Justification,
     commands::{CompressionMethod, CompressionType, GraficData, Orientation, ZplFormatCommand},
 };
 
@@ -78,13 +79,7 @@ pub fn parse_a(input: &str) -> IResult<&str, ZplFormatCommand> {
     ))(input)?;
 
     let font = font.chars().next().unwrap_or('A');
-    let orientation = match orientation {
-        "N" => Orientation::Normal,
-        "R" => Orientation::Rotate,
-        "I" => Orientation::Invert,
-        "B" => Orientation::BackRotate,
-        _ => return IResult::Err(nom::Err::Error(Error::new(input, ErrorKind::NoneOf))),
-    };
+    let (_, orientation) = Orientation::try_from_str(orientation)?;
     Ok((
         input,
         ZplFormatCommand::Font {
@@ -226,6 +221,196 @@ fn parse_fr(input: &str) -> IResult<&str, ZplFormatCommand> {
     Ok((input, ZplFormatCommand::Inverted))
 }
 
+fn parse_by(input: &str) -> IResult<&str, ZplFormatCommand> {
+    let (input, _) = tag("^BY")(input)?;
+    let (input, (width, _, width_ratio, _, height)) = tuple((
+        opt(parse_u8),
+        opt(char(',')),
+        opt(parse_float),
+        opt(char(',')),
+        opt(parse_usize),
+    ))(input)?;
+
+    let width = width.unwrap_or(2);
+    let width_ratio = width_ratio.unwrap_or(3.);
+    let height = height.unwrap_or(10);
+
+    Ok((
+        input,
+        ZplFormatCommand::BarcodeConfig {
+            width,
+            width_ratio,
+            height,
+        },
+    ))
+}
+
+// fn parse_b3(input: &str) -> IResult<&str, ZplFormatCommand> {
+//     let (input, _) = tag("^B3")(input)?;
+//     // let
+//     // Ok((input, ZplFormatCommand::))
+// }
+
+fn parse_b7(input: &str) -> IResult<&str, ZplFormatCommand> {
+    let (input, _) = tag("^B7")(input)?;
+    Ok((input, ZplFormatCommand::Inverted))
+}
+
+fn parse_b8(input: &str) -> IResult<&str, ZplFormatCommand> {
+    let (input, _) = tag("^B8")(input)?;
+    Ok((input, ZplFormatCommand::Inverted))
+}
+
+fn parse_bc(input: &str) -> IResult<&str, ZplFormatCommand> {
+    let (input, _) = tag("^BC")(input)?;
+
+    let (input, rest) = take_until("^FD")(input)?;
+
+    let (input, (orientation, _, height, _, line, _, line_above, _, check_digit, _, mode)) =
+        match rest.is_empty() {
+            true => (
+                input,
+                (
+                    None, None, None, None, None, None, None, None, None, None, None,
+                ),
+            ),
+            false => {
+                let (_, params) = tuple((
+                    opt(take(1usize)),
+                    opt(char(',')),
+                    opt(parse_usize),
+                    opt(char(',')),
+                    opt(alpha1),
+                    opt(char(',')),
+                    opt(alpha1),
+                    opt(char(',')),
+                    opt(alpha1),
+                    opt(char(',')),
+                    opt(alpha1),
+                ))(rest)?;
+                (input, params)
+            }
+        };
+
+    let orientation = match orientation {
+        Some(o) => {
+            let result = Orientation::try_from_str(o);
+            result
+                .map(|(_, orientation)| orientation)
+                .unwrap_or(Orientation::Normal)
+        }
+        None => Orientation::Normal,
+    };
+
+    let show_text = line
+        .map(|line| match line {
+            "N" => false,
+            _ => true,
+        })
+        .unwrap_or(true);
+
+    let text_above = line_above
+        .map(|l_above| match l_above {
+            "N" => false,
+            _ => true,
+        })
+        .unwrap_or(true);
+
+    let check_digit = check_digit
+        .map(|digit| match digit {
+            "N" => false,
+            _ => true,
+        })
+        .unwrap_or(true);
+
+    let mode = mode
+        .map(|mode| match mode {
+            "N" => Code128Mode::Normal,
+            "U" => Code128Mode::Ucc,
+            "D" => Code128Mode::Ean,
+            "A" => Code128Mode::Auto,
+            _ => Code128Mode::Normal,
+        })
+        .unwrap_or(Code128Mode::Normal);
+
+    Ok((
+        input,
+        ZplFormatCommand::Barcode(BarcodeType::Code128 {
+            orientation,
+            height,
+            show_text,
+            text_above,
+            check_digit,
+            mode,
+        }),
+    ))
+}
+
+fn parse_be(input: &str) -> IResult<&str, ZplFormatCommand> {
+    let (input, _) = tag("^BE")(input)?;
+    let (input, rest) = take_until("^FD")(input)?;
+
+    let (input, (orientation, _, height, _, line, _, line_above)) = match rest.is_empty() {
+        true => (input, (None, None, None, None, None, None, None)),
+        false => {
+            let (_, params) = tuple((
+                opt(take(1usize)),
+                opt(char(',')),
+                opt(parse_usize),
+                opt(char(',')),
+                opt(alpha1),
+                opt(char(',')),
+                opt(alpha1),
+            ))(rest)?;
+            (input, params)
+        }
+    };
+
+    let orientation = match orientation {
+        Some(o) => {
+            let result = Orientation::try_from_str(o);
+            result
+                .map(|(_, orientation)| orientation)
+                .unwrap_or(Orientation::Normal)
+        }
+        None => Orientation::Normal,
+    };
+
+    let show_text = line
+        .map(|line| match line {
+            "N" => false,
+            _ => true,
+        })
+        .unwrap_or(true);
+
+    let text_above = line_above
+        .map(|l_above| match l_above {
+            "N" => false,
+            _ => true,
+        })
+        .unwrap_or(true);
+
+    Ok((
+        input,
+        ZplFormatCommand::Barcode(BarcodeType::Ean13 {
+            orientation,
+            height,
+            show_text,
+            text_above,
+        }),
+    ))
+}
+
+fn parse_bq(input: &str) -> IResult<&str, ZplFormatCommand> {
+    let (input, _) = tag("^BQ")(input)?;
+    Ok((input, ZplFormatCommand::Inverted))
+}
+
+fn parse_bx(input: &str) -> IResult<&str, ZplFormatCommand> {
+    let (input, _) = tag("^BX")(input)?;
+    Ok((input, ZplFormatCommand::Inverted))
+}
+
 fn parse_command_name(input: &str) -> IResult<&str, &str> {
     // Matches e.g. "^FO", "^FD", "~DG", "^XYZ"
     recognize(preceded(
@@ -261,6 +446,9 @@ pub fn parse_command(input: &str) -> IResult<&str, ZplFormatCommand> {
         map(parse_cf, |c| c),
         map(parse_gb, |c| c),
         map(parse_fr, |c| c),
+        map(parse_by, |c| c),
+        map(parse_bc, |c| c),
+        map(parse_be, |c| c),
         // add more commands here
     ))
     .parse(input)
@@ -292,11 +480,11 @@ pub fn parse_zpl(input: &str) -> IResult<&str, Vec<ZplFormatCommand>> {
 #[cfg(test)]
 mod tests {
     use crate::{
-        Color, Justification,
+        BarcodeType, Code128Mode, Color, Justification,
         commands::{CompressionMethod, CompressionType, GraficData, Orientation, ZplFormatCommand},
         parse::{
-            parse_a, parse_cf, parse_fd, parse_fg, parse_fo, parse_fr, parse_ft, parse_gb,
-            parse_ll, parse_ls, parse_pw, parse_zpl,
+            parse_a, parse_bc, parse_be, parse_by, parse_cf, parse_fd, parse_fg, parse_fo,
+            parse_fr, parse_ft, parse_gb, parse_ll, parse_ls, parse_pw, parse_zpl,
         },
     };
 
@@ -472,6 +660,89 @@ mod tests {
         let (remain, zpl) = parse_fr(&input).unwrap();
         assert_eq!(remain, "^FDTest^FS");
         assert_eq!(zpl, ZplFormatCommand::Inverted);
+    }
+
+    #[test]
+    fn parse_by_test() {
+        let input = format!("^BY5,2,270^FO100,550");
+        let (remain, zpl) = parse_by(&input).unwrap();
+        assert_eq!(remain, "^FO100,550");
+        assert_eq!(
+            zpl,
+            ZplFormatCommand::BarcodeConfig {
+                width: 5,
+                width_ratio: 2.,
+                height: 270
+            }
+        );
+    }
+
+    #[test]
+    fn parse_bc_test() {
+        let input = format!("^BCN,50,Y,N,N,A^FD12345678^FS");
+        let (remain, zpl) = parse_bc(&input).unwrap();
+        assert_eq!(remain, "^FD12345678^FS");
+        assert_eq!(
+            zpl,
+            ZplFormatCommand::Barcode(BarcodeType::Code128 {
+                orientation: Orientation::Normal,
+                height: Some(50),
+                show_text: true,
+                text_above: false,
+                check_digit: false,
+                mode: Code128Mode::Auto
+            })
+        );
+    }
+
+    #[test]
+    fn parse_bc_blank_test() {
+        let input = format!("^BC^FD12345678^FS");
+        let (remain, zpl) = parse_bc(&input).unwrap();
+        assert_eq!(remain, "^FD12345678^FS");
+        assert_eq!(
+            zpl,
+            ZplFormatCommand::Barcode(BarcodeType::Code128 {
+                orientation: Orientation::Normal,
+                height: None,
+                show_text: true,
+                text_above: true,
+                check_digit: true,
+                mode: Code128Mode::Normal
+            })
+        );
+    }
+
+    #[test]
+    fn parse_be_test() {
+        let input = format!("^BEN,50,Y,N^FD12345678^FS");
+        let (remain, zpl) = parse_be(&input).unwrap();
+        assert_eq!(remain, "^FD12345678^FS");
+        assert_eq!(
+            zpl,
+            ZplFormatCommand::Barcode(BarcodeType::Ean13 {
+                orientation: Orientation::Normal,
+                height: Some(50),
+                show_text: true,
+                text_above: false,
+            })
+        );
+    }
+
+    #[test]
+    fn parse_be_blank_test() {
+        let input = format!("^BE^FD12345678^FS");
+        let (remain, zpl) = parse_be(&input).unwrap();
+        assert_eq!(remain, "^FD12345678^FS");
+        assert_eq!(
+            zpl,
+            ZplFormatCommand::Barcode(BarcodeType::Ean13 {
+                orientation: Orientation::Normal,
+                height: None,
+                show_text: true,
+                text_above: true,
+            })
+        );
     }
 
     #[test]

@@ -1,4 +1,7 @@
-use nom::error::{Error, ErrorKind};
+use nom::{
+    IResult,
+    error::{Error, ErrorKind},
+};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum CompressionType {
@@ -19,12 +22,26 @@ pub struct GraficData {
     pub data: String,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Orientation {
     Normal,     // 0°
     Rotate,     // 90°
     Invert,     // 180°
     BackRotate, // 270°
+}
+
+impl Orientation {
+    pub fn try_from_str(value: &str) -> IResult<&str, Self> {
+        let orientation = match value {
+            "N" => Orientation::Normal,
+            "R" => Orientation::Rotate,
+            "I" => Orientation::Invert,
+            "B" => Orientation::BackRotate,
+            _ => return Err(nom::Err::Error(Error::new("", ErrorKind::NoneOf))),
+        };
+
+        Ok(("", orientation))
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -70,6 +87,12 @@ pub enum ZplFormatCommand {
     LabelLength(usize),
     PrintWidth(usize),
     LabelShift(i32),
+    BarcodeConfig {
+        width: u8,
+        width_ratio: f32,
+        height: usize,
+    },
+    Barcode(super::BarcodeType),
     ChangeFont {
         name: char,
         height: usize,
