@@ -67,30 +67,4 @@ impl BarcodeType {
             BarcodeType::DataMatrix => todo!(),
         }
     }
-
-    /// relative position of text for barcode
-    /// in percentage of font height
-    pub fn relative_text_ypos(&self) -> f32 {
-        match self {
-            BarcodeType::Code39 => todo!(),
-            BarcodeType::Code128 {
-                orientation,
-                height,
-                show_text,
-                text_above,
-                check_digit,
-                mode,
-            } => 0.,
-            BarcodeType::Pdf417 => todo!(),
-            BarcodeType::Ean8 => todo!(),
-            BarcodeType::Ean13 {
-                orientation,
-                height,
-                show_text,
-                text_above,
-            } => -0.5,
-            BarcodeType::Qr => todo!(),
-            BarcodeType::DataMatrix => todo!(),
-        }
-    }
 }

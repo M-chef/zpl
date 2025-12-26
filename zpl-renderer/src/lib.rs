@@ -5,8 +5,8 @@ mod text;
 use std::error::Error;
 
 use fontdue::Font;
-use tiny_skia::{Color, Mask, Pixmap, PixmapPaint, Transform};
-use zpl_interpreter::{DecodedBitmap, ZplElement, ZplLabel};
+use tiny_skia::{Color, Pixmap};
+use zpl_interpreter::{ZplElement, ZplLabel};
 use zpl_parser::Justification;
 
 use crate::{
@@ -130,29 +130,21 @@ pub fn render(label: &ZplLabel) -> RenderOutput {
                 let bitmap = BitMap::new(position, bmp.width as u32, bmp.height as u32, pixels);
                 bitmap.draw(&mut pixmap).unwrap();
             }
-            ZplElement::Barcode {
-                x,
-                y,
-                content,
-                bitmap,
-            } => {
+            ZplElement::Barcode { x, y, content } => {
                 let position = Position::new(*x, *y);
+                let bitmap = &content.bitmap;
                 let pixels = bitmap.pixels.clone();
                 let bitmap =
                     BitMap::new(position, bitmap.width as u32, bitmap.height as u32, pixels);
                 bitmap.draw(&mut pixmap).unwrap();
 
-                if let Some(content) = content {
+                if let Some(text) = &content.text {
                     let font_width = content.font_width;
                     let font_height = font_width;
                     let font_config = FontConfig::new(font.clone(), font_width, font_height, false);
-                    let position = Position::new(content.x as usize, content.y as usize);
-                    let text = Text::new(
-                        content.text.clone(),
-                        dbg!(font_config),
-                        position,
-                        Justification::Left,
-                    );
+                    let position = Position::new(content.text_x as usize, content.text_y as usize);
+                    let text =
+                        Text::new(text.clone(), font_config, position, content.justification);
                     text.draw(&mut pixmap).unwrap();
                 }
             }

@@ -4,20 +4,13 @@ mod decode_image;
 use zpl_parser::{BarcodeType, Color, Justification, ZplFormatCommand};
 
 pub use crate::decode_image::DecodedBitmap;
-use crate::{barcode::bitmap_from_barcode, decode_image::decode_zpl_graphic};
+use crate::{barcode::barcode_from_content, decode_image::decode_zpl_graphic};
 
-pub enum FieldAlignment {
-    LeftTop,
-    LeftBottom,
-}
-
-#[derive(Debug, Clone)]
-pub struct BarcodeContent {
-    pub x: i32,
-    pub y: i32,
-    pub relative_y: f32,
-    pub font_width: f32,
-    pub text: String,
+#[derive(Default)]
+enum Origin {
+    #[default]
+    Top,
+    Bottom,
 }
 
 #[derive(Debug, Clone)]
@@ -49,23 +42,31 @@ pub enum ZplElement {
     Barcode {
         x: usize,
         y: usize,
-        content: Option<BarcodeContent>,
-        bitmap: DecodedBitmap,
+        content: BarcodeContent,
     },
 }
 
-#[derive(Default)]
-enum Origin {
-    #[default]
-    Top,
-    Bottom,
+#[derive(Debug, Clone)]
+pub struct BarcodeContent {
+    pub text_x: i32,
+    pub text_y: i32,
+    pub text_y_shift: f32,
+    pub font_width: f32,
+    pub justification: Justification,
+    pub text: Option<String>,
+    pub bitmap: DecodedBitmap,
 }
 
-// #[derive(Clone, Copy)]
-// struct BarcodeState {
-//     r#type: BarcodeType,
-//     height: i32,
-// }
+impl BarcodeContent {
+    fn set_text_x(&mut self, x: i32) {
+        let center_barcode_x = self.bitmap.width as i32 / 2 + x;
+        self.text_x = center_barcode_x
+    }
+
+    fn set_text_y(&mut self, relative_to: i32) {
+        self.text_y = relative_to + self.bitmap.height as i32
+    }
+}
 
 struct BarcodeConfig {
     width: u8,
@@ -91,10 +92,10 @@ impl InterpreterState {
         self.current_x
     }
 
-    pub fn current_y(&self, height: i32) -> i32 {
+    pub fn current_y(&self, element_height: i32) -> i32 {
         let offset = match self.current_origin {
             Origin::Top => 0,
-            Origin::Bottom => height,
+            Origin::Bottom => element_height,
         };
 
         self.current_y - offset
@@ -118,7 +119,7 @@ pub fn interpret(cmds: &[ZplFormatCommand]) -> ZplLabel {
     let mut width = 0usize;
     let mut height = 0usize;
 
-    for cmd in dbg!(cmds) {
+    for cmd in cmds {
         match cmd {
             ZplFormatCommand::FieldOrigin {
                 x,
@@ -140,32 +141,19 @@ pub fn interpret(cmds: &[ZplFormatCommand]) -> ZplLabel {
                 state.current_justification = *justification;
             }
             ZplFormatCommand::FieldData(text) => {
-                let mut content = text.clone();
-                let elem = if let Some(barcode) = state.barcode_type
-                    && let Ok(bitmap) =
-                        bitmap_from_barcode(state.barcode_config.as_ref(), barcode, &mut content)
+                let content = text.clone();
+                let elem = if let Some(barcode_type) = state.barcode_type
+                    && let Ok(mut barcode_content) =
+                        barcode_from_content(state.barcode_config.as_ref(), barcode_type, &content)
                 {
-                    let height = barcode.height().unwrap_or(
-                        state
-                            .barcode_config
-                            .as_ref()
-                            .map(|config| config.height)
-                            .unwrap_or(10),
-                    );
-                    let relative_y = barcode.relative_text_ypos();
-                    let font_width = (bitmap.width / content.chars().count()) as f32;
-                    let content = barcode.show_content().then_some(BarcodeContent {
-                        x: state.current_x(),
-                        y: state.current_y(height as i32) + height as i32,
-                        text: content,
-                        font_width,
-                        relative_y,
-                    });
+                    barcode_content.set_text_x(state.current_x());
+                    let element_height = barcode_content.bitmap.height as i32;
+                    barcode_content.set_text_y(state.current_y(element_height));
+
                     ZplElement::Barcode {
                         x: state.current_x() as usize,
-                        y: state.current_y(height as i32) as usize,
-                        content,
-                        bitmap,
+                        y: state.current_y(element_height) as usize,
+                        content: barcode_content,
                     }
                 } else {
                     ZplElement::Text {
