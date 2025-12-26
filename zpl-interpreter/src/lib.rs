@@ -42,13 +42,13 @@ pub enum ZplElement {
         inverted: bool,
     },
     Image {
-        x: i32,
-        y: i32,
+        x: usize,
+        y: usize,
         bmp: DecodedBitmap,
     },
     Barcode {
-        x: i32,
-        y: i32,
+        x: usize,
+        y: usize,
         content: Option<BarcodeContent>,
         bitmap: DecodedBitmap,
     },
@@ -162,8 +162,8 @@ pub fn interpret(cmds: &[ZplFormatCommand]) -> ZplLabel {
                         relative_y,
                     });
                     ZplElement::Barcode {
-                        x: state.current_x(),
-                        y: state.current_y(height as i32),
+                        x: state.current_x() as usize,
+                        y: state.current_y(height as i32) as usize,
                         content,
                         bitmap,
                     }
@@ -220,8 +220,8 @@ pub fn interpret(cmds: &[ZplFormatCommand]) -> ZplLabel {
                     _ => DecodedBitmap::default(),
                 };
                 let elem = ZplElement::Image {
-                    x: state.current_x(),
-                    y: state.current_y(height as i32),
+                    x: state.current_x() as usize,
+                    y: state.current_y(height as i32) as usize,
                     bmp,
                 };
                 elements.push(elem)
