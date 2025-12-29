@@ -3,7 +3,7 @@ use zpl_parser::Color;
 
 use crate::{Drawable, Position};
 
-pub struct RectDim {
+pub(crate) struct RectDim {
     width: f32,
     height: f32,
     line_thickness: f32,
@@ -11,7 +11,7 @@ pub struct RectDim {
 }
 
 impl RectDim {
-    pub fn new(width: f32, height: f32, line_thickness: f32, rounding: u8) -> Self {
+    pub(crate) fn new(width: f32, height: f32, line_thickness: f32, rounding: u8) -> Self {
         Self {
             width,
             height,

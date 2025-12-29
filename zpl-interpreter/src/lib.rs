@@ -4,7 +4,10 @@ mod decode_image;
 use zpl_parser::{BarcodeType, Color, Justification, ZplFormatCommand};
 
 pub use crate::decode_image::DecodedBitmap;
-use crate::{barcode::barcode_from_content, decode_image::decode_zpl_graphic};
+use crate::{
+    barcode::{BarcodeContent, barcode_from_content},
+    decode_image::decode_zpl_graphic,
+};
 
 #[derive(Default)]
 enum Origin {
@@ -16,8 +19,8 @@ enum Origin {
 #[derive(Debug, Clone)]
 pub enum ZplElement {
     Text {
-        x: i32,
-        y: i32,
+        x: usize,
+        y: usize,
         font_width: f32,
         font_height: f32,
         content: String,
@@ -25,11 +28,11 @@ pub enum ZplElement {
         inverted: bool,
     },
     Rectangle {
-        x: i32,
-        y: i32,
-        width: i32,
-        height: i32,
-        thickness: i32,
+        x: usize,
+        y: usize,
+        width: usize,
+        height: usize,
+        thickness: usize,
         color: Color,
         rounding: u8,
         inverted: bool,
@@ -46,28 +49,6 @@ pub enum ZplElement {
     },
 }
 
-#[derive(Debug, Clone)]
-pub struct BarcodeContent {
-    pub text_x: i32,
-    pub text_y: i32,
-    pub text_y_shift: f32,
-    pub font_width: f32,
-    pub justification: Justification,
-    pub text: Option<String>,
-    pub bitmap: DecodedBitmap,
-}
-
-impl BarcodeContent {
-    fn set_text_x(&mut self, x: i32) {
-        let center_barcode_x = self.bitmap.width as i32 / 2 + x;
-        self.text_x = center_barcode_x
-    }
-
-    fn set_text_y(&mut self, relative_to: i32) {
-        self.text_y = relative_to + self.bitmap.height as i32
-    }
-}
-
 struct BarcodeConfig {
     width: u8,
     width_ratio: f32,
@@ -76,8 +57,8 @@ struct BarcodeConfig {
 
 #[derive(Default)]
 struct InterpreterState {
-    current_x: i32,
-    current_y: i32,
+    current_x: usize,
+    current_y: usize,
     current_origin: Origin,
     current_font_height: f32,
     current_font_width: f32,
@@ -88,11 +69,11 @@ struct InterpreterState {
 }
 
 impl InterpreterState {
-    pub fn current_x(&self) -> i32 {
+    pub fn current_x(&self) -> usize {
         self.current_x
     }
 
-    pub fn current_y(&self, element_height: i32) -> i32 {
+    pub fn current_y(&self, element_height: usize) -> usize {
         let offset = match self.current_origin {
             Origin::Top => 0,
             Origin::Bottom => element_height,
@@ -147,7 +128,7 @@ pub fn interpret(cmds: &[ZplFormatCommand]) -> ZplLabel {
                         barcode_from_content(state.barcode_config.as_ref(), barcode_type, &content)
                 {
                     barcode_content.set_text_x(state.current_x());
-                    let element_height = barcode_content.bitmap.height as i32;
+                    let element_height = barcode_content.bitmap.height;
                     barcode_content.set_text_y(state.current_y(element_height));
 
                     ZplElement::Barcode {
@@ -158,7 +139,7 @@ pub fn interpret(cmds: &[ZplFormatCommand]) -> ZplLabel {
                 } else {
                     ZplElement::Text {
                         x: state.current_x(),
-                        y: state.current_y(state.current_font_height as i32),
+                        y: state.current_y(state.current_font_height as usize),
                         font_width: state.current_font_width,
                         font_height: state.current_font_height,
                         content,
@@ -209,7 +190,7 @@ pub fn interpret(cmds: &[ZplFormatCommand]) -> ZplLabel {
                 };
                 let elem = ZplElement::Image {
                     x: state.current_x() as usize,
-                    y: state.current_y(height as i32) as usize,
+                    y: state.current_y(height) as usize,
                     bmp,
                 };
                 elements.push(elem)
@@ -223,10 +204,10 @@ pub fn interpret(cmds: &[ZplFormatCommand]) -> ZplLabel {
             } => {
                 let elem = ZplElement::Rectangle {
                     x: state.current_x(),
-                    y: state.current_y(*height as i32),
-                    width: *width as i32,
-                    height: *height as i32,
-                    thickness: *thickness as i32,
+                    y: state.current_y(*height),
+                    width: *width,
+                    height: *height,
+                    thickness: *thickness,
                     color: *color,
                     rounding: *rounding,
                     inverted: state.inverted,

@@ -86,7 +86,7 @@ impl From<Option<&str>> for Color {
 pub enum ZplFormatCommand {
     LabelLength(usize),
     PrintWidth(usize),
-    LabelShift(i32),
+    LabelShift(usize),
     BarcodeConfig {
         width: u8,
         width_ratio: f32,
@@ -105,13 +105,13 @@ pub enum ZplFormatCommand {
         width: usize,
     },
     FieldOrigin {
-        x: i32,
-        y: i32,
+        x: usize,
+        y: usize,
         justification: Justification,
     },
     FieldTypeset {
-        x: i32,
-        y: i32,
+        x: usize,
+        y: usize,
         justification: Justification,
     },
     FieldData(String),

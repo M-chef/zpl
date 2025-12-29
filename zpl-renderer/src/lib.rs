@@ -2,12 +2,12 @@ mod bitmap;
 mod shapes;
 mod text;
 
-use std::error::Error;
+use std::{collections::HashMap, error::Error};
 
 use fontdue::Font;
 use tiny_skia::{Color, Pixmap};
 use zpl_interpreter::{ZplElement, ZplLabel};
-use zpl_parser::Justification;
+use zpl_parser::{Color as ZplColor, Justification};
 
 use crate::{
     bitmap::BitMap,
@@ -80,10 +80,15 @@ pub fn render(label: &ZplLabel) -> RenderOutput {
     // White background
     pixmap.fill(Color::WHITE);
 
-    // Load a TTF font from bytes. For demo purposes we use include_bytes!; replace with your chosen font.
-    // This example expects a file at "assets/DejaVuSans.ttf" or you can change to any TTF you have.
-    let font_data: &'static [u8] = include_bytes!("../../fonts/AdwaitaSans-Regular.ttf");
-    let font = Font::from_bytes(font_data as &[u8], fontdue::FontSettings::default()).unwrap();
+    // Load a TTF font from bytes.
+    let mut font_data = HashMap::new();
+    let adwaita: &'static [u8] = include_bytes!("../../fonts/AdwaitaSans/AdwaitaSans-Regular.ttf");
+    let font = Font::from_bytes(adwaita as &[u8], fontdue::FontSettings::default()).unwrap();
+    font_data.insert("adwaita", font);
+
+    let ocrb: &'static [u8] = include_bytes!("../../fonts/OCRB/OCR-B.ttf");
+    let font = Font::from_bytes(ocrb as &[u8], fontdue::FontSettings::default()).unwrap();
+    font_data.insert("ocrb", font);
 
     for el in &label.elements {
         match el {
@@ -97,7 +102,12 @@ pub fn render(label: &ZplLabel) -> RenderOutput {
                 inverted,
             } => {
                 let position = Position::new(*x as usize, *y as usize);
-                let font_config = FontConfig::new(font.clone(), *font_width, *font_height, false);
+                let font_config = FontConfig::new(
+                    font_data.get("adwaita").unwrap().clone(),
+                    *font_width,
+                    *font_height,
+                    false,
+                );
                 let text = Text::new(content.clone(), font_config, position, *justification);
                 if *inverted {
                     text.draw_inverted(&mut pixmap);
@@ -138,13 +148,41 @@ pub fn render(label: &ZplLabel) -> RenderOutput {
                     BitMap::new(position, bitmap.width as u32, bitmap.height as u32, pixels);
                 bitmap.draw(&mut pixmap).unwrap();
 
-                if let Some(text) = &content.text {
+                for text_element in content.text_elements() {
                     let font_width = content.font_width;
                     let font_height = font_width;
-                    let font_config = FontConfig::new(font.clone(), font_width, font_height, false);
-                    let position = Position::new(content.text_x as usize, content.text_y as usize);
-                    let text =
-                        Text::new(text.clone(), font_config, position, content.justification);
+                    let font_config = FontConfig::new(
+                        font_data.get("ocrb").unwrap().clone(),
+                        font_width,
+                        font_height,
+                        false,
+                    );
+                    let position =
+                        Position::new(text_element.text_x as usize, text_element.text_y as usize);
+                    let text = Text::new(
+                        text_element.text.clone(),
+                        font_config,
+                        position,
+                        text_element.justification,
+                    );
+
+                    let rect_width = text.measure_text_dimensions().width;
+                    let rect_height = font_height * 1.2;
+                    let line_thickness = rect_height.min(rect_width) - 0.1;
+                    let dim = RectDim::new(rect_width, rect_height, line_thickness, 0);
+                    let rect_pos = {
+                        let mut y = position.y as f32;
+                        y = y - rect_height / 7.;
+                        let x = match text_element.justification {
+                            Justification::Left => position.x,
+                            Justification::Right => todo!(),
+                            Justification::Auto => position.x - rect_width as usize / 2,
+                        };
+                        Position::new(x, y as usize)
+                    };
+                    let rect = Rectangle::new(rect_pos, dim, ZplColor::White);
+
+                    rect.draw(&mut pixmap).unwrap();
                     text.draw(&mut pixmap).unwrap();
                 }
             }

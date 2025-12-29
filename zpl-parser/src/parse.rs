@@ -5,9 +5,7 @@ use nom::{
         complete::{tag, take_until, take_while1},
         take,
     },
-    character::complete::{
-        alpha1, alphanumeric1, char, i32 as parse_i32, u8 as parse_u8, usize as parse_usize,
-    },
+    character::complete::{alpha1, alphanumeric1, char, u8 as parse_u8, usize as parse_usize},
     combinator::{map, opt, recognize},
     error::{Error, ErrorKind},
     multi::many0,
@@ -16,7 +14,7 @@ use nom::{
 };
 
 use crate::{
-    BarcodeType, Code128Mode, Color, Justification,
+    BarcodeType, Code128Mode, Color,
     commands::{CompressionMethod, CompressionType, GraficData, Orientation, ZplFormatCommand},
 };
 
@@ -34,7 +32,7 @@ pub fn parse_ll(input: &str) -> IResult<&str, ZplFormatCommand> {
 
 pub fn parse_ls(input: &str) -> IResult<&str, ZplFormatCommand> {
     let (input, _) = tag("^LS")(input)?;
-    let (input, length) = parse_i32(input)?;
+    let (input, length) = parse_usize(input)?;
     Ok((input, ZplFormatCommand::LabelShift(length)))
 }
 
@@ -91,13 +89,13 @@ pub fn parse_a(input: &str) -> IResult<&str, ZplFormatCommand> {
     ))
 }
 
-fn parse_coordinates(input: &str) -> IResult<&str, (i32, i32, Option<u8>)> {
+fn parse_coordinates(input: &str) -> IResult<&str, (usize, usize, Option<u8>)> {
     alt((
         map(
-            tuple((parse_i32, char(','), parse_i32, char(','), parse_u8)),
+            tuple((parse_usize, char(','), parse_usize, char(','), parse_u8)),
             |(x, _, y, _, z)| (x, y, Some(z)),
         ),
-        map(tuple((parse_i32, char(','), parse_i32)), |(x, _, y)| {
+        map(tuple((parse_usize, char(','), parse_usize)), |(x, _, y)| {
             (x, y, None)
         }),
     ))

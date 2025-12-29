@@ -33,9 +33,9 @@ impl FontConfig {
 }
 
 #[derive(Debug, Clone, Copy)]
-struct TextFieldProps {
-    width: f32,
-    min_y: f32,
+pub struct TextFieldProps {
+    pub width: f32,
+    pub min_y: f32,
 }
 
 #[derive(Debug, Clone)]
@@ -61,7 +61,7 @@ impl Text {
         }
     }
 
-    fn measure_text_dimensions(&self) -> TextFieldProps {
+    pub fn measure_text_dimensions(&self) -> TextFieldProps {
         let width_scale =
             self.font_config.font_width / self.font_config.font_height * ZEBRA_SPACING_CORRECTION;
         let mut total_width = 0.0;

@@ -8,38 +8,77 @@ use crate::{BarcodeContent, barcode::bitmap_from_bitmatrix};
 const EAN_WIDTH_CORRECTION: f32 = 5. / 6.;
 
 pub(super) fn generate_ean13(
-    width: Option<u8>,
+    module_width: Option<u8>,
     content: &str,
     height: Option<usize>,
 ) -> Result<BarcodeContent, Box<dyn Error>> {
     let content = check_ean_content(content)?;
     let writer = EAN13Writer::default();
-    let modules = estimate_ean13_modules(&content);
-    let width = width.unwrap_or(2);
-    let width = width as f32 * modules as f32 * EAN_WIDTH_CORRECTION;
-    let width = width as i32;
+
+    let module_width = module_width.unwrap_or(2);
+
+    let total_width = {
+        let modules = ean13_modules(&content);
+        let width = module_width as f32 * modules as f32 * EAN_WIDTH_CORRECTION;
+        width as i32
+    };
+
     let height = height.unwrap_or(10);
     let bitmatrix = writer.encode_with_hints(
         &content,
         &BarcodeFormat::EAN_13,
-        width,
+        total_width,
         height as i32,
         &EncodeHints::default().with(EncodeHintValue::Margin("0".into())),
     )?;
     let bitmap = bitmap_from_bitmatrix(bitmatrix)?;
-    let font_width = (bitmap.width / content.chars().count()) as f32;
-    // let text = pad_ean_content(&content);
+    let font_width = { module_width as f32 * 4.65 };
     let text = content;
 
-    Ok(BarcodeContent {
-        text_x: 0,
-        text_y: 0,
-        text_y_shift: 0.,
+    let mut barcode_content = BarcodeContent {
         font_width,
-        justification: Justification::Auto,
-        text: Some(text),
+        text_elements: Vec::new(),
         bitmap,
-    })
+    };
+
+    let y_shift = {
+        let rel = -0.4 * font_width as f32;
+        rel as isize
+    };
+
+    // first number before barcode
+    let x_shift = {
+        let shift = module_width as isize * 6;
+        -shift
+    };
+    let text1 = text[..1].to_string();
+    barcode_content.add_text_element(x_shift, y_shift, text1, Justification::Left);
+
+    // second part in left barcode area
+    let text2 = padd_text(&text[1..7]);
+    let x_shift = { module_width as isize * 6 };
+    barcode_content.add_text_element(x_shift, y_shift, text2, Justification::Left);
+
+    // third part in right barcode area
+    let x_shift = {
+        let shift = module_width as isize * 51;
+        shift
+    };
+    let text3 = padd_text(&text[7..]);
+    barcode_content.add_text_element(x_shift, y_shift, text3, Justification::Left);
+
+    Ok(barcode_content)
+}
+
+fn padd_text(text: &str) -> String {
+    let mut text1 = String::new();
+    for (idx, ch) in text.chars().enumerate() {
+        text1.push(ch);
+        if idx != 0 || idx != 6 {
+            text1.push_str(" ");
+        }
+    }
+    text1
 }
 
 fn check_ean_content(input: &str) -> Result<String, Box<dyn Error + 'static>> {
@@ -71,22 +110,7 @@ fn check_ean_content(input: &str) -> Result<String, Box<dyn Error + 'static>> {
     Ok(content)
 }
 
-fn pad_ean_content(contents: &str) -> String {
-    let mut padded_content = String::new();
-    for (i, ch) in contents.chars().enumerate() {
-        if i == 1 {
-            padded_content.push_str("          ");
-        } else if i == 6 {
-            padded_content.push_str("  ");
-        } else {
-            padded_content.push_str(" ");
-        }
-        padded_content.push(ch);
-    }
-    padded_content
-}
-
-fn estimate_ean13_modules(_data: &str) -> usize {
+fn ean13_modules(_data: &str) -> usize {
     // EAN-13 structure:
     // - Left guard: 3 modules
     // - Left digits (6 × 7): 42 modules

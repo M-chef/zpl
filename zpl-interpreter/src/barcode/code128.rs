@@ -6,7 +6,6 @@ use zpl_parser::Justification;
 use crate::{BarcodeContent, barcode::bitmap_from_bitmatrix};
 
 pub(super) fn generate_code_128(
-    // barcode_config: Option<&BarcodeState>,
     width: Option<u8>,
     contents: &str,
     height: Option<usize>,
@@ -23,16 +22,16 @@ pub(super) fn generate_code_128(
         &EncodeHints::default().with(EncodeHintValue::Margin("0".into())),
     )?;
     let bitmap = bitmap_from_bitmatrix(bit_matrix)?;
-    let font_width = (bitmap.width / contents.chars().count()) as f32;
-    Ok(BarcodeContent {
-        text_x: 0,
-        text_y: 0,
-        text_y_shift: -0.5,
+    let font_width = (bitmap.width / contents.chars().count()) as f32 * 0.8;
+    let mut barcode_content = BarcodeContent {
         font_width,
-        justification: Justification::Auto,
-        text: Some(contents.to_string()),
+        text_elements: vec![],
         bitmap,
-    })
+    };
+    let text_x = barcode_content.bitmap.width as isize / 2;
+    let text_y = { font_width * 0.2 } as isize;
+    barcode_content.add_text_element(text_x, text_y, contents.to_string(), Justification::Auto);
+    Ok(barcode_content)
 }
 
 fn estimate_code128_modules(data: &str) -> usize {

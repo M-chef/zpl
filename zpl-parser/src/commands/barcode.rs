@@ -1,5 +1,3 @@
-use nom::combinator::Opt;
-
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Code128Mode {
     Normal,
@@ -47,22 +45,10 @@ impl BarcodeType {
     pub fn show_content(&self) -> bool {
         match self {
             BarcodeType::Code39 => todo!(),
-            BarcodeType::Code128 {
-                orientation,
-                height,
-                show_text,
-                text_above,
-                check_digit,
-                mode,
-            } => *show_text,
+            BarcodeType::Code128 { show_text, .. } => *show_text,
             BarcodeType::Pdf417 => todo!(),
             BarcodeType::Ean8 => todo!(),
-            BarcodeType::Ean13 {
-                orientation,
-                height,
-                show_text,
-                text_above,
-            } => *show_text,
+            BarcodeType::Ean13 { show_text, .. } => *show_text,
             BarcodeType::Qr => todo!(),
             BarcodeType::DataMatrix => todo!(),
         }
