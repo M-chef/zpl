@@ -32,7 +32,7 @@ pub(super) fn generate_ean13(
         &EncodeHints::default().with(EncodeHintValue::Margin("0".into())),
     )?;
     let bitmap = bitmap_from_bitmatrix(bitmatrix)?;
-    let font_width = { module_width as f32 * 4.65 };
+    let font_width = { module_width as f32 * 3.95 };
     let text = content;
 
     let mut barcode_content = BarcodeContent {

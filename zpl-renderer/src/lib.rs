@@ -82,19 +82,27 @@ pub fn render(label: &ZplLabel) -> RenderOutput {
 
     // Load a TTF font from bytes.
     let mut font_data = HashMap::new();
-    let adwaita: &'static [u8] = include_bytes!("../../fonts/AdwaitaSans/AdwaitaSans-Regular.ttf");
+    let adwaita: &'static [u8] = include_bytes!("../../fonts/AdwaitaSans/AdwaitaSans-Bold.ttf");
     let font = Font::from_bytes(adwaita as &[u8], fontdue::FontSettings::default()).unwrap();
-    font_data.insert("adwaita", font);
+    let scale = 0.85;
+    font_data.insert('0', (font, scale));
+
+    let ocrb: &'static [u8] = include_bytes!("../../fonts/AdwaitaMono/AdwaitaMono-Regular.ttf");
+    let font = Font::from_bytes(ocrb as &[u8], fontdue::FontSettings::default()).unwrap();
+    let scale = 1.0;
+    font_data.insert('A', (font, scale));
 
     let ocrb: &'static [u8] = include_bytes!("../../fonts/OCRB/OCR-B.ttf");
     let font = Font::from_bytes(ocrb as &[u8], fontdue::FontSettings::default()).unwrap();
-    font_data.insert("ocrb", font);
+    let scale = 1.0;
+    font_data.insert(';', (font, scale));
 
     for el in &label.elements {
         match el {
             ZplElement::Text {
                 x,
                 y,
+                font_name,
                 font_width,
                 font_height,
                 content,
@@ -102,12 +110,8 @@ pub fn render(label: &ZplLabel) -> RenderOutput {
                 inverted,
             } => {
                 let position = Position::new(*x as usize, *y as usize);
-                let font_config = FontConfig::new(
-                    font_data.get("adwaita").unwrap().clone(),
-                    *font_width,
-                    *font_height,
-                    false,
-                );
+                let (font, scale) = font_data.get(font_name).unwrap().clone();
+                let font_config = FontConfig::new(font, *font_width, *font_height, scale, false);
                 let text = Text::new(content.clone(), font_config, position, *justification);
                 if *inverted {
                     text.draw_inverted(&mut pixmap);
@@ -151,12 +155,8 @@ pub fn render(label: &ZplLabel) -> RenderOutput {
                 for text_element in content.text_elements() {
                     let font_width = content.font_width;
                     let font_height = font_width;
-                    let font_config = FontConfig::new(
-                        font_data.get("ocrb").unwrap().clone(),
-                        font_width,
-                        font_height,
-                        false,
-                    );
+                    let (font, scale) = font_data.get(&';').unwrap().clone();
+                    let font_config = FontConfig::new(font, font_width, font_height, scale, false);
                     let position =
                         Position::new(text_element.text_x as usize, text_element.text_y as usize);
                     let text = Text::new(

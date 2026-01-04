@@ -21,6 +21,7 @@ pub enum ZplElement {
     Text {
         x: usize,
         y: usize,
+        font_name: char,
         font_width: f32,
         font_height: f32,
         content: String,
@@ -55,17 +56,36 @@ struct BarcodeConfig {
     height: usize,
 }
 
-#[derive(Default)]
+// #[derive(Default)]
 struct InterpreterState {
     current_x: usize,
     current_y: usize,
     current_origin: Origin,
     current_font_height: f32,
     current_font_width: f32,
+    current_font_name: char,
     current_justification: Justification,
     inverted: bool,
     barcode_type: Option<BarcodeType>,
     barcode_config: Option<BarcodeConfig>,
+}
+
+impl Default for InterpreterState {
+    fn default() -> Self {
+        Self {
+            current_font_height: 10.,
+            current_font_width: 10.,
+            current_font_name: 'A',
+
+            current_x: Default::default(),
+            current_y: Default::default(),
+            current_origin: Default::default(),
+            current_justification: Default::default(),
+            inverted: Default::default(),
+            barcode_type: Default::default(),
+            barcode_config: Default::default(),
+        }
+    }
 }
 
 impl InterpreterState {
@@ -91,11 +111,7 @@ pub struct ZplLabel {
 }
 
 pub fn interpret(cmds: &[ZplFormatCommand]) -> ZplLabel {
-    let mut state = InterpreterState {
-        current_font_height: 10.,
-        current_font_width: 10.,
-        ..Default::default()
-    };
+    let mut state = InterpreterState::default();
     let mut elements = Vec::new();
     let mut width = 0usize;
     let mut height = 0usize;
@@ -140,6 +156,7 @@ pub fn interpret(cmds: &[ZplFormatCommand]) -> ZplLabel {
                     ZplElement::Text {
                         x: state.current_x(),
                         y: state.current_y(state.current_font_height as usize),
+                        font_name: state.current_font_name,
                         font_width: state.current_font_width,
                         font_height: state.current_font_height,
                         content,
@@ -158,6 +175,7 @@ pub fn interpret(cmds: &[ZplFormatCommand]) -> ZplLabel {
                 height,
                 width,
             } => {
+                state.current_font_name = *name;
                 state.current_font_height = *height as f32;
                 state.current_font_width = *width as f32;
             }
@@ -166,6 +184,7 @@ pub fn interpret(cmds: &[ZplFormatCommand]) -> ZplLabel {
                 height,
                 width,
             } => {
+                state.current_font_name = *name;
                 state.current_font_height = *height as f32;
                 state.current_font_width = *width as f32;
             }
@@ -232,6 +251,7 @@ pub fn interpret(cmds: &[ZplFormatCommand]) -> ZplLabel {
                 state = InterpreterState {
                     current_font_height: state.current_font_height,
                     current_font_width: state.current_font_width,
+                    current_font_name: state.current_font_name,
                     ..Default::default()
                 }
             }

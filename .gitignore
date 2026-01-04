@@ -1,3 +1,5 @@
 /target
+.venv
 
 *.png
+extract_fonts.py
