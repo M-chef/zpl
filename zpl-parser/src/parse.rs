@@ -2,19 +2,22 @@ use nom::{
     IResult, Parser,
     branch::alt,
     bytes::{
-        complete::{tag, take_until, take_while1},
+        complete::{tag, take_till, take_until},
         take,
     },
-    character::complete::{alpha1, alphanumeric1, char, u8 as parse_u8, usize as parse_usize},
-    combinator::{map, opt, recognize},
+    character::complete::{
+        alpha1, alphanumeric1, char, i8 as parse_i8, line_ending, multispace0, u8 as parse_u8,
+        usize as parse_usize,
+    },
+    combinator::{cut, map, opt, peek},
     error::{Error, ErrorKind},
-    multi::many0,
+    multi::{many_till, many1},
     number::complete::float as parse_float,
     sequence::{preceded, tuple},
 };
 
 use crate::{
-    BarcodeType, Code128Mode, Color,
+    BarcodeType, Code128Mode, Color, ParseError, ParseErrorKind,
     commands::{CompressionMethod, CompressionType, GraficData, Orientation, ZplFormatCommand},
 };
 
@@ -409,80 +412,125 @@ fn parse_bx(input: &str) -> IResult<&str, ZplFormatCommand> {
     Ok((input, ZplFormatCommand::Inverted))
 }
 
-fn parse_command_name(input: &str) -> IResult<&str, &str> {
-    // Matches e.g. "^FO", "^FD", "~DG", "^XYZ"
-    recognize(preceded(
-        nom::character::complete::one_of("^~"),
-        take_while1(|c: char| c.is_ascii_uppercase()),
-    ))
-    .parse(input)
+fn parse_fx(input: &str) -> IResult<&str, ()> {
+    let (input, _) = tag("^FX")(input)?;
+    let (input, _) = take_till(|c| c == '\n' || c == '\r')(input)?;
+    let (input, _) = opt(line_ending).parse(input)?;
+    Ok((input, ()))
 }
 
-fn skip_unknown_command(input: &str) -> IResult<&str, ()> {
-    // 1. Consume the command name
-    let (input, _) = parse_command_name(input)?;
+fn parse_mm(input: &str) -> IResult<&str, ()> {
+    let (input, _) = tag("^MM")(input)?;
+    let (input, (_, _, _)) = tuple((alpha1, opt(char(',')), opt(alpha1)))(input)?;
+    Ok((input, ()))
+}
 
-    // 2. Consume everything until next command or end
-    let (remaining, _) = nom::bytes::complete::take_till(|c| c == '^' || c == '~')
-        .parse(input)
-        .map(|(r, _)| (r, ()))?;
+fn parse_md(input: &str) -> IResult<&str, ()> {
+    let (input, _) = tag("^MD")(input)?;
+    let (input, _) = parse_i8(input)?;
+    Ok((input, ()))
+}
 
-    Ok((remaining, ()))
+/// parse ^XA as start of label definition
+fn parse_xa(input: &str) -> IResult<&str, ()> {
+    let (input, _) = tag("^XA")(input)?;
+    Ok((input, ()))
+}
+
+/// parse ^XZ as end of label definition
+fn parse_xz(input: &str) -> IResult<&str, ()> {
+    let (input, _) = tag("^XZ")(input)?;
+    Ok((input, ()))
 }
 
 pub fn parse_command(input: &str) -> IResult<&str, ZplFormatCommand> {
     alt((
-        map(parse_fo, |c| c),
-        map(parse_fd, |c| c),
-        map(parse_a, |c| c),
-        map(parse_fg, |c| c),
-        map(parse_ft, |c| c),
-        map(parse_ll, |c| c),
-        map(parse_ls, |c| c),
-        map(parse_pw, |c| c),
-        map(parse_fs, |c| c),
-        map(parse_cf, |c| c),
-        map(parse_gb, |c| c),
-        map(parse_fr, |c| c),
-        map(parse_by, |c| c),
-        map(parse_bc, |c| c),
-        map(parse_be, |c| c),
+        parse_fo, parse_fd, parse_a, parse_fg, parse_ft, parse_ll, parse_ls, parse_pw, parse_fs,
+        parse_cf, parse_gb, parse_fr, parse_by, parse_bc, parse_be,
         // add more commands here
     ))
     .parse(input)
 }
 
-pub fn skip_until_command(input: &str) -> IResult<&str, &str> {
-    // stops on ^ or ~
-    take_until("^")(input)
+/// Parse a single ZPL item (command with optional whitespace)
+fn parse_zpl_item(input: &str) -> IResult<&str, ZplFormatCommand> {
+    let (input, _) = multispace0(input)?; // Skip whitespace only
+    let (input, _) = opt(parse_fx).parse(input)?;
+    let (input, _) = multispace0(input)?;
+    let (input, _) = opt(parse_md).parse(input)?;
+    let (input, _) = multispace0(input)?;
+    let (input, _) = opt(parse_mm).parse(input)?;
+    let (input, _) = multispace0(input)?;
+
+    // STOP on ^XZ (terminator)
+    if peek(parse_xz).parse(input).is_ok() {
+        return Err(nom::Err::Error(nom::error::Error::new(
+            input,
+            ErrorKind::Eof,
+        )));
+    }
+
+    cut(parse_command).parse(input)
 }
 
-fn parse_zpl_item(input: &str) -> IResult<&str, Option<ZplFormatCommand>> {
-    // Skip anything until a command starts
-    let (input, _) = nom::combinator::opt(skip_until_command).parse(input)?;
-
-    // Try to parse a known command, or skip if unknown
-    alt((
-        map(parse_command, Some),
-        map(skip_unknown_command, |_| None),
-    ))
-    .parse(input)
-}
-
-pub fn parse_zpl(input: &str) -> IResult<&str, Vec<ZplFormatCommand>> {
-    let (input, items) = many0(parse_zpl_item).parse(input)?;
-    let commands = items.into_iter().flatten().collect();
+/// Internal parser - returns IResult
+fn parse_zpl_intern(input: &str) -> IResult<&str, Vec<ZplFormatCommand>> {
+    let (input, commands) = many1(parse_zpl_item).parse(input)?;
     Ok((input, commands))
+}
+
+// extract all parts starting with ^XA and ending with ^XZ
+fn find_labels(input: &str) -> Vec<Result<&str, ParseError>> {
+    let mut labels = Vec::new();
+    let mut rest = input;
+
+    while let Some(xa_pos) = rest.find("^XA") {
+        let after_xa = &rest[xa_pos + 3..];
+        if let Some(xz_pos) = after_xa.find("^XZ") {
+            let end = xa_pos + 3 + xz_pos + 3;
+            labels.push(Ok(&rest[xa_pos..end]));
+            rest = &rest[end..];
+        } else {
+            labels.push(Err(ParseError {
+                kind: ParseErrorKind::MissingCommand,
+                message: "^XZ".to_string(),
+            }));
+            break;
+        }
+    }
+
+    labels
+}
+
+pub fn parse_zpl(input: &str) -> Result<Vec<ZplFormatCommand>, ParseError> {
+    // extract labels
+    let labels = find_labels(input);
+    let input = labels.last().ok_or(ParseError {
+        kind: ParseErrorKind::MissingCommand,
+        message: "^XA".to_string(),
+    })?;
+
+    let input = input.as_deref().map_err(|err| err.clone())?;
+
+    // strip ^XA
+    let (input, _) = parse_xa(input)?;
+
+    // parse content
+    let (_, commands) = parse_zpl_intern(input)
+        .map_err(|err| <nom::Err<nom::error::Error<&str>> as Into<ParseError>>::into(err))?;
+
+    Ok(commands)
 }
 
 #[cfg(test)]
 mod tests {
     use crate::{
-        BarcodeType, Code128Mode, Color, Justification,
+        BarcodeType, Code128Mode, Color, Justification, ParseError, ParseErrorKind,
         commands::{CompressionMethod, CompressionType, GraficData, Orientation, ZplFormatCommand},
         parse::{
             parse_a, parse_bc, parse_be, parse_by, parse_cf, parse_fd, parse_fg, parse_fo,
-            parse_fr, parse_ft, parse_gb, parse_ll, parse_ls, parse_pw, parse_zpl,
+            parse_fr, parse_ft, parse_fx, parse_gb, parse_ll, parse_ls, parse_md, parse_mm,
+            parse_pw, parse_zpl, parse_zpl_intern,
         },
     };
 
@@ -744,14 +792,40 @@ mod tests {
     }
 
     #[test]
-    fn parse_zpl_test() {
+    fn parse_fx_test() {
+        let input = "^FX this is a comment and even a ^FO may appear here\r\n^FT";
+        let (remain, zpl) = parse_fx(input).unwrap();
+        assert_eq!(remain, "^FT")
+    }
+
+    #[test]
+    fn parse_mm_test() {
+        let input = "^MMT";
+        let (remain, zpl) = parse_mm(&input).unwrap();
+        assert_eq!(remain, "");
+
+        let input = "^MMT,Y";
+        let (remain, zpl) = parse_mm(&input).unwrap();
+        assert_eq!(remain, "")
+    }
+
+    #[test]
+    fn parse_md_test() {
+        let input = "^MD-30";
+        let (remain, zpl) = parse_md(&input).unwrap();
+        assert_eq!(remain, "");
+    }
+
+    #[test]
+    fn parse_zpl_intern_test() {
         let input = r"^PW685
         ^LL236
         ^LS0
-        ^FT86,78^A0N,51,51^FH\^CI28^FD#1001#^FS^CI27";
+        ^FT86,78^A0N,51,51^FD#1001#^FS^XZ";
 
-        let (remain, commands) = parse_zpl(input).unwrap();
-        assert_eq!(remain, "");
+        let (remain, commands) = parse_zpl_intern(input).unwrap();
+
+        assert_eq!(remain, "^XZ");
         assert_eq!(
             commands,
             vec![
@@ -776,10 +850,68 @@ mod tests {
     }
 
     #[test]
+    fn should_error_on_missing_xa() {
+        let input = "^FDTest^FS";
+        let err = parse_zpl(input).unwrap_err();
+        assert_eq!(
+            err,
+            ParseError {
+                kind: ParseErrorKind::MissingCommand,
+                message: "^XA".to_string()
+            }
+        )
+    }
+
+    #[test]
+    fn should_error_on_missing_xz() {
+        let input = "^XA^FDTest^FS";
+        let err = parse_zpl(input).unwrap_err();
+        assert_eq!(
+            err,
+            ParseError {
+                kind: ParseErrorKind::MissingCommand,
+                message: "^XZ".to_string()
+            }
+        )
+    }
+
+    #[test]
+    fn should_error_on_invalid_syntax_command() {
+        let input = "^XAInvalidCommand^XZ";
+        let err = dbg!(parse_zpl(input)).unwrap_err();
+        assert_eq!(
+            err,
+            ParseError {
+                kind: ParseErrorKind::InvalidSyntax,
+                message: "InvalidCom".to_string()
+            }
+        )
+    }
+
+    #[test]
+    fn should_error_on_unknown_command() {
+        let input = "^XA^FT20,20^Unknown^CF0,60^XZ";
+        let err = parse_zpl(input).unwrap_err();
+        assert_eq!(
+            err,
+            ParseError {
+                kind: ParseErrorKind::InvalidSyntax,
+                message: "^Unknown^C".to_string()
+            }
+        );
+    }
+
+    #[test]
     fn parse_zpl_test_2() {
         let input = std::fs::read_to_string("../zpl/examples/zpl_real_live.txt").unwrap();
-        let (remain, commands) = parse_zpl(&input).unwrap();
-        assert_eq!(remain, "");
+        let commands = parse_zpl(&input).unwrap();
+        println!("{commands:?}");
+    }
+
+    #[test]
+    fn parse_zpl_test_with_host_commands() {
+        let input = std::fs::read_to_string("../zpl/examples/render_with_images.txt").unwrap();
+        let commands = parse_zpl(&input).unwrap();
         println!("{commands:?}");
     }
 }

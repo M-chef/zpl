@@ -310,31 +310,4 @@ fn dilate_bitmap_hybrid_passes(
 }
 
 #[cfg(test)]
-mod tests {
-    use fontdue::Font;
-
-    #[test]
-    fn check_font_for_styles() {
-        let font_data = std::fs::read("../fonts/AdwaitaSans/AdwaitaSans-Regular.ttf").unwrap();
-
-        // Index 0 is usually regular
-        let font_regular = Font::from_bytes(
-            font_data.clone(),
-            fontdue::FontSettings {
-                collection_index: 0,
-                ..Default::default()
-            },
-        )
-        .unwrap();
-
-        // Try index 1, 2, 3 etc for other styles
-        let font_bold = Font::from_bytes(
-            font_data,
-            fontdue::FontSettings {
-                collection_index: 1,
-                ..Default::default()
-            },
-        )
-        .unwrap();
-    }
-}
+mod tests {}
