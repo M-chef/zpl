@@ -6,10 +6,10 @@ use nom::{
         take,
     },
     character::complete::{
-        alpha1, alphanumeric1, char, i8 as parse_i8, line_ending, multispace0, u8 as parse_u8,
-        usize as parse_usize,
+        alpha1, alphanumeric1, anychar, char, i8 as parse_i8, isize as parse_isize, line_ending,
+        multispace0, u8 as parse_u8, usize as parse_usize,
     },
-    combinator::{cut, map, opt, peek},
+    combinator::{complete, cut, map, not, opt, peek},
     error::{Error, ErrorKind},
     multi::{many_till, many1},
     number::complete::float as parse_float,
@@ -17,7 +17,7 @@ use nom::{
 };
 
 use crate::{
-    BarcodeType, Code128Mode, Color, ParseError, ParseErrorKind,
+    BarcodeType, Code128Mode, Color, ParseError, ParseErrorKind, TextBlockJustification,
     commands::{CompressionMethod, CompressionType, GraficData, Orientation, ZplFormatCommand},
 };
 
@@ -431,6 +431,66 @@ fn parse_md(input: &str) -> IResult<&str, ()> {
     Ok((input, ()))
 }
 
+fn parse_fh(input: &str) -> IResult<&str, ZplFormatCommand> {
+    let (input, _) = tag("^FH")(input)?;
+    let (input, ch) = anychar(input)?;
+    Ok((input, ZplFormatCommand::FieldHexIndicator { char: ch }))
+}
+
+fn parse_ci(input: &str) -> IResult<&str, ZplFormatCommand> {
+    let (input, _) = tag("^CI")(input)?;
+    let (input, num) = parse_u8(input)?;
+    let mapping_parser = complete(tuple((char(','), parse_u8, char(','), parse_u8)));
+    // let (input, mapping) = many0(parse_mapping_strict).parse(input)?;
+    let (input, (mapping, _)) = many_till(mapping_parser, peek(not(char(',')))).parse(input)?;
+    let mapping = mapping.into_iter().map(|(_, x, _, y)| (x, y)).collect();
+    Ok((input, ZplFormatCommand::CharacterSet { num, mapping }))
+}
+
+fn parse_fb(input: &str) -> IResult<&str, ZplFormatCommand> {
+    let (input, _) = tag("^FB")(input)?;
+    let (input, width) = opt(parse_usize).parse(input)?;
+    let (input, lines) = opt((char(','), parse_usize)).parse(input)?;
+    let (input, line_spacing) = opt((char(','), parse_isize)).parse(input)?;
+    let (input, justification) = opt((char(','), alpha1)).parse(input)?;
+    let (input, hanging_indent) = opt((char(','), parse_usize)).parse(input)?;
+
+    let width = width.unwrap_or(0);
+    let lines = lines.map(|(_, l)| l).unwrap_or(0);
+    let line_spacing = line_spacing.map(|(_, l)| l).unwrap_or(0);
+    let hanging_indent = hanging_indent.map(|(_, h)| h).unwrap_or(0);
+
+    let justification = match justification.map(|(_, j)| j) {
+        Some(j) if j == "L" => TextBlockJustification::Left,
+        Some(j) if j == "R" => TextBlockJustification::Right,
+        Some(j) if j == "C" => TextBlockJustification::Center,
+        Some(j) if j == "J" => TextBlockJustification::Justified,
+        Some(j) => TextBlockJustification::Left,
+        None => TextBlockJustification::Left,
+    };
+
+    Ok((
+        input,
+        ZplFormatCommand::FieldBlock {
+            width,
+            lines: lines,
+            line_spacing,
+            justification,
+            hanging_indent,
+        },
+    ))
+}
+
+fn parse_pq(input: &str) -> IResult<&str, ()> {
+    let (input, _) = tag("^PQ")(input)?;
+    let (input, _) = opt(parse_usize).parse(input)?;
+    let (input, _) = opt((char(','), parse_usize)).parse(input)?;
+    let (input, _) = opt((char(','), parse_usize)).parse(input)?;
+    let (input, _) = opt((char(','), alpha1)).parse(input)?;
+    let (input, _) = opt((char(','), alpha1)).parse(input)?;
+    Ok((input, ()))
+}
+
 /// parse ^XA as start of label definition
 fn parse_xa(input: &str) -> IResult<&str, ()> {
     let (input, _) = tag("^XA")(input)?;
@@ -446,8 +506,8 @@ fn parse_xz(input: &str) -> IResult<&str, ()> {
 pub fn parse_command(input: &str) -> IResult<&str, ZplFormatCommand> {
     alt((
         parse_fo, parse_fd, parse_a, parse_fg, parse_ft, parse_ll, parse_ls, parse_pw, parse_fs,
-        parse_cf, parse_gb, parse_fr, parse_by, parse_bc, parse_be,
-        // add more commands here
+        parse_cf, parse_gb, parse_fr, parse_by, parse_bc, parse_be, parse_ci, parse_fh,
+        parse_fb, // add more commands here
     ))
     .parse(input)
 }
@@ -460,6 +520,8 @@ fn parse_zpl_item(input: &str) -> IResult<&str, ZplFormatCommand> {
     let (input, _) = opt(parse_md).parse(input)?;
     let (input, _) = multispace0(input)?;
     let (input, _) = opt(parse_mm).parse(input)?;
+    let (input, _) = multispace0(input)?;
+    let (input, _) = opt(parse_pq).parse(input)?;
     let (input, _) = multispace0(input)?;
 
     // STOP on ^XZ (terminator)
@@ -524,13 +586,16 @@ pub fn parse_zpl(input: &str) -> Result<Vec<ZplFormatCommand>, ParseError> {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+
     use crate::{
         BarcodeType, Code128Mode, Color, Justification, ParseError, ParseErrorKind,
+        TextBlockJustification,
         commands::{CompressionMethod, CompressionType, GraficData, Orientation, ZplFormatCommand},
         parse::{
-            parse_a, parse_bc, parse_be, parse_by, parse_cf, parse_fd, parse_fg, parse_fo,
-            parse_fr, parse_ft, parse_fx, parse_gb, parse_ll, parse_ls, parse_md, parse_mm,
-            parse_pw, parse_zpl, parse_zpl_intern,
+            parse_a, parse_bc, parse_be, parse_by, parse_cf, parse_ci, parse_fb, parse_fd,
+            parse_fg, parse_fh, parse_fo, parse_fr, parse_ft, parse_fx, parse_gb, parse_ll,
+            parse_ls, parse_md, parse_mm, parse_pq, parse_pw, parse_zpl, parse_zpl_intern,
         },
     };
 
@@ -813,6 +878,94 @@ mod tests {
     fn parse_md_test() {
         let input = "^MD-30";
         let (remain, zpl) = parse_md(&input).unwrap();
+        assert_eq!(remain, "");
+    }
+
+    #[test]
+    fn parse_fh_test() {
+        let input = "^FH\\";
+        let (remain, zpl) = parse_fh(&input).unwrap();
+        assert_eq!(remain, "");
+        assert_eq!(zpl, ZplFormatCommand::FieldHexIndicator { char: '\\' })
+    }
+
+    #[test]
+    fn parse_ci_test() {
+        let input = "^CI28";
+        let (remain, zpl) = parse_ci(&input).unwrap();
+        assert_eq!(remain, "");
+        assert_eq!(
+            zpl,
+            ZplFormatCommand::CharacterSet {
+                num: 28,
+                mapping: HashMap::new()
+            }
+        );
+
+        let input = "^CI0,36,21";
+        let (remain, zpl) = parse_ci(&input).unwrap();
+        assert_eq!(remain, "");
+        assert_eq!(
+            zpl,
+            ZplFormatCommand::CharacterSet {
+                num: 0,
+                mapping: [(36, 21)].into()
+            }
+        )
+    }
+
+    #[test]
+    fn should_error_on_parse_ci_test() {
+        let input = "^CI0,1";
+        let err = parse_ci(&input).unwrap_err();
+        assert_eq!(
+            err,
+            nom::Err::Error(nom::error::Error {
+                input: "",
+                code: nom::error::ErrorKind::Char
+            })
+        )
+    }
+
+    #[test]
+    fn parse_fb_test() {
+        let input = "^FB500,5";
+        let (remain, zpl) = parse_fb(&input).unwrap();
+        assert_eq!(remain, "");
+        assert_eq!(
+            zpl,
+            ZplFormatCommand::FieldBlock {
+                width: 500,
+                lines: 5,
+                line_spacing: 0,
+                justification: TextBlockJustification::Left,
+                hanging_indent: 0
+            }
+        );
+
+        let input = "^FB500,5,1,R,1";
+        let (remain, zpl) = parse_fb(&input).unwrap();
+        assert_eq!(remain, "");
+        assert_eq!(
+            zpl,
+            ZplFormatCommand::FieldBlock {
+                width: 500,
+                lines: 5,
+                line_spacing: 1,
+                justification: TextBlockJustification::Right,
+                hanging_indent: 1
+            }
+        );
+    }
+
+    #[test]
+    fn parse_pq_test() {
+        let input = "^PQ10";
+        let (remain, _) = parse_pq(&input).unwrap();
+        assert_eq!(remain, "");
+
+        let input = "^PQ10,0,0,Y,N";
+        let (remain, _) = parse_pq(&input).unwrap();
         assert_eq!(remain, "");
     }
 

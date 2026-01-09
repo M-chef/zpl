@@ -246,6 +246,8 @@ pub fn interpret(cmds: &[ZplFormatCommand]) -> ZplLabel {
                 })
             }
             ZplFormatCommand::Barcode(barcode_type) => state.barcode_type = Some(*barcode_type),
+            ZplFormatCommand::FieldHexIndicator { char } => {}
+            ZplFormatCommand::CharacterSet { num, mapping } => {}
             ZplFormatCommand::FieldSeparator => {
                 // reset state
                 state = InterpreterState {

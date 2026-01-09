@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use nom::{
     IResult,
     error::{Error, ErrorKind},
@@ -62,6 +64,15 @@ impl From<Option<u8>> for Justification {
             None => Justification::Left,
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum TextBlockJustification {
+    #[default]
+    Left,
+    Center,
+    Right,
+    Justified,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -130,6 +141,20 @@ pub enum ZplFormatCommand {
         rounding: u8,
     },
     Inverted,
+    FieldHexIndicator {
+        char: char,
+    },
+    CharacterSet {
+        num: u8,
+        mapping: HashMap<u8, u8>,
+    },
+    FieldBlock {
+        width: usize,
+        lines: usize,
+        line_spacing: isize,
+        justification: TextBlockJustification,
+        hanging_indent: usize,
+    },
     FieldSeparator,
 }
 
