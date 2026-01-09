@@ -82,7 +82,7 @@ pub fn render(label: &ZplLabel) -> RenderOutput {
 
     // Load a TTF font from bytes.
     let mut font_data = HashMap::new();
-    let adwaita: &'static [u8] = include_bytes!("../../fonts/AdwaitaSans/AdwaitaSans-Bold.ttf");
+    let adwaita: &'static [u8] = include_bytes!("../../fonts/Oswald/Oswald-Medium.ttf");
     let font = Font::from_bytes(adwaita as &[u8], fontdue::FontSettings::default()).unwrap();
     let scale = 0.85;
     font_data.insert('0', (font, scale));
@@ -108,11 +108,19 @@ pub fn render(label: &ZplLabel) -> RenderOutput {
                 content,
                 justification,
                 inverted,
+                field_block,
             } => {
                 let position = Position::new(*x as usize, *y as usize);
                 let (font, scale) = font_data.get(font_name).unwrap().clone();
                 let font_config = FontConfig::new(font, *font_width, *font_height, scale, false);
-                let text = Text::new(content.clone(), font_config, position, *justification);
+                let field_box = field_block.as_ref().map(|fb| fb.into());
+                let text = Text::new(
+                    content.clone(),
+                    font_config,
+                    position,
+                    *justification,
+                    field_box,
+                );
                 if *inverted {
                     text.draw_inverted(&mut pixmap);
                 } else {
@@ -164,9 +172,10 @@ pub fn render(label: &ZplLabel) -> RenderOutput {
                         font_config,
                         position,
                         text_element.justification,
+                        None,
                     );
 
-                    let rect_width = text.measure_text_dimensions().width;
+                    let rect_width = text.width() as f32;
                     let rect_height = font_height * 1.2;
                     let line_thickness = rect_height.min(rect_width) - 0.1;
                     let dim = RectDim::new(rect_width, rect_height, line_thickness, 0);

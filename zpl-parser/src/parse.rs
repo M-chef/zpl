@@ -512,7 +512,7 @@ pub fn parse_command(input: &str) -> IResult<&str, ZplFormatCommand> {
     .parse(input)
 }
 
-/// Parse a single ZPL item (command with optional whitespace)
+/// Parse a single ZPL item
 fn parse_zpl_item(input: &str) -> IResult<&str, ZplFormatCommand> {
     let (input, _) = multispace0(input)?; // Skip whitespace only
     let (input, _) = opt(parse_fx).parse(input)?;

@@ -19,6 +19,11 @@ This project includes fonts licensed under the SIL Open Font License 1.1:
   - License file: [fonts/AdwaitaMono/LICENSE](fonts/AdwaitaMono/LICENSE)
   - Source: https://gitlab.gnome.org/GNOME/adwaita-fonts/
 
+- **Google Oswald** by Vernon Adams, Kalapi Gajjar, Cyreal 
+  - License: SIL Open Font License 1.1
+  - License file: [fonts/Oswald/LICENSE](fonts/Oswald/LICENSE)
+  - Source: https://fonts.google.com/specimen/Oswald
+
 - **OCR-B** by Adrian Frutiger
   - License: SIL Open Font License 1.1
   - License file: [fonts/OCRB/LICENSE](fonts/OCRB/LICENSE)

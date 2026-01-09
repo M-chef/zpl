@@ -72,9 +72,10 @@ pub(super) fn generate_ean13(
 
 fn padd_text(text: &str) -> String {
     let mut text1 = String::new();
+    let last_idx = text.len() - 1;
     for (idx, ch) in text.chars().enumerate() {
         text1.push(ch);
-        if idx != 0 || idx != 6 {
+        if idx != 0 || idx != last_idx {
             text1.push_str(" ");
         }
     }

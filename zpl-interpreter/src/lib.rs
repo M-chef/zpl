@@ -1,7 +1,7 @@
 mod barcode;
 mod decode_image;
 
-use zpl_parser::{BarcodeType, Color, Justification, ZplFormatCommand};
+use zpl_parser::{BarcodeType, Color, Justification, TextBlockJustification, ZplFormatCommand};
 
 pub use crate::decode_image::DecodedBitmap;
 use crate::{
@@ -27,6 +27,7 @@ pub enum ZplElement {
         content: String,
         justification: Justification,
         inverted: bool,
+        field_block: Option<FieldBlock>,
     },
     Rectangle {
         x: usize,
@@ -56,36 +57,42 @@ struct BarcodeConfig {
     height: usize,
 }
 
-// #[derive(Default)]
-struct InterpreterState {
-    current_x: usize,
-    current_y: usize,
-    current_origin: Origin,
+struct FontState {
     current_font_height: f32,
     current_font_width: f32,
     current_font_name: char,
-    current_justification: Justification,
-    inverted: bool,
-    barcode_type: Option<BarcodeType>,
-    barcode_config: Option<BarcodeConfig>,
 }
 
-impl Default for InterpreterState {
+impl Default for FontState {
     fn default() -> Self {
         Self {
             current_font_height: 10.,
             current_font_width: 10.,
             current_font_name: 'A',
-
-            current_x: Default::default(),
-            current_y: Default::default(),
-            current_origin: Default::default(),
-            current_justification: Default::default(),
-            inverted: Default::default(),
-            barcode_type: Default::default(),
-            barcode_config: Default::default(),
         }
     }
+}
+
+#[derive(Debug, Clone)]
+pub struct FieldBlock {
+    pub width: usize,
+    pub lines: usize,
+    pub line_spacing: isize,
+    pub justification: TextBlockJustification,
+    pub hanging_indent: usize,
+}
+
+#[derive(Default)]
+struct InterpreterState {
+    current_x: usize,
+    current_y: usize,
+    current_origin: Origin,
+    font: FontState,
+    fieldblock_state: Option<FieldBlock>,
+    current_justification: Justification,
+    inverted: bool,
+    barcode_type: Option<BarcodeType>,
+    barcode_config: Option<BarcodeConfig>,
 }
 
 impl InterpreterState {
@@ -155,13 +162,14 @@ pub fn interpret(cmds: &[ZplFormatCommand]) -> ZplLabel {
                 } else {
                     ZplElement::Text {
                         x: state.current_x(),
-                        y: state.current_y(state.current_font_height as usize),
-                        font_name: state.current_font_name,
-                        font_width: state.current_font_width,
-                        font_height: state.current_font_height,
+                        y: state.current_y(state.font.current_font_height as usize),
+                        font_name: state.font.current_font_name,
+                        font_width: state.font.current_font_width,
+                        font_height: state.font.current_font_height,
                         content,
                         justification: state.current_justification,
                         inverted: state.inverted,
+                        field_block: state.fieldblock_state.clone(),
                     }
                 };
                 elements.push(elem)
@@ -175,18 +183,18 @@ pub fn interpret(cmds: &[ZplFormatCommand]) -> ZplLabel {
                 height,
                 width,
             } => {
-                state.current_font_name = *name;
-                state.current_font_height = *height as f32;
-                state.current_font_width = *width as f32;
+                state.font.current_font_name = *name;
+                state.font.current_font_height = *height as f32;
+                state.font.current_font_width = *width as f32;
             }
             ZplFormatCommand::ChangeFont {
                 name,
                 height,
                 width,
             } => {
-                state.current_font_name = *name;
-                state.current_font_height = *height as f32;
-                state.current_font_width = *width as f32;
+                state.font.current_font_name = *name;
+                state.font.current_font_height = *height as f32;
+                state.font.current_font_width = *width as f32;
             }
             ZplFormatCommand::GraphicField {
                 compression_type,
@@ -248,12 +256,29 @@ pub fn interpret(cmds: &[ZplFormatCommand]) -> ZplLabel {
             ZplFormatCommand::Barcode(barcode_type) => state.barcode_type = Some(*barcode_type),
             ZplFormatCommand::FieldHexIndicator { char } => {}
             ZplFormatCommand::CharacterSet { num, mapping } => {}
+            ZplFormatCommand::FieldBlock {
+                width,
+                lines,
+                line_spacing,
+                justification,
+                hanging_indent,
+            } => {
+                state.fieldblock_state = Some(FieldBlock {
+                    width: *width,
+                    lines: *lines,
+                    line_spacing: *line_spacing,
+                    justification: *justification,
+                    hanging_indent: *hanging_indent,
+                })
+            }
             ZplFormatCommand::FieldSeparator => {
                 // reset state
                 state = InterpreterState {
-                    current_font_height: state.current_font_height,
-                    current_font_width: state.current_font_width,
-                    current_font_name: state.current_font_name,
+                    font: FontState {
+                        current_font_height: state.font.current_font_height,
+                        current_font_width: state.font.current_font_width,
+                        current_font_name: state.font.current_font_name,
+                    },
                     ..Default::default()
                 }
             }
