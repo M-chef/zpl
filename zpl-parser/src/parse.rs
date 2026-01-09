@@ -6,12 +6,12 @@ use nom::{
         take,
     },
     character::complete::{
-        alpha1, alphanumeric1, char, i8 as parse_i8, line_ending, multispace0, u8 as parse_u8,
-        usize as parse_usize,
+        alpha1, alphanumeric1, anychar, char, i8 as parse_i8, line_ending, multispace0,
+        u8 as parse_u8, usize as parse_usize,
     },
-    combinator::{cut, map, opt, peek},
+    combinator::{all_consuming, complete, cut, map, not, opt, peek},
     error::{Error, ErrorKind},
-    multi::{many_till, many1},
+    multi::{many_till, many0, many1},
     number::complete::float as parse_float,
     sequence::{preceded, tuple},
 };
@@ -431,6 +431,22 @@ fn parse_md(input: &str) -> IResult<&str, ()> {
     Ok((input, ()))
 }
 
+fn parse_fh(input: &str) -> IResult<&str, ZplFormatCommand> {
+    let (input, _) = tag("^FH")(input)?;
+    let (input, ch) = anychar(input)?;
+    Ok((input, ZplFormatCommand::FieldHexIndicator { char: ch }))
+}
+
+fn parse_ci(input: &str) -> IResult<&str, ZplFormatCommand> {
+    let (input, _) = tag("^CI")(input)?;
+    let (input, num) = parse_u8(input)?;
+    let mapping_parser = complete(tuple((char(','), parse_u8, char(','), parse_u8)));
+    // let (input, mapping) = many0(parse_mapping_strict).parse(input)?;
+    let (input, (mapping, _)) = many_till(mapping_parser, peek(not(char(',')))).parse(input)?;
+    let mapping = mapping.into_iter().map(|(_, x, _, y)| (x, y)).collect();
+    Ok((input, ZplFormatCommand::CharacterSet { num, mapping }))
+}
+
 /// parse ^XA as start of label definition
 fn parse_xa(input: &str) -> IResult<&str, ()> {
     let (input, _) = tag("^XA")(input)?;
@@ -446,8 +462,8 @@ fn parse_xz(input: &str) -> IResult<&str, ()> {
 pub fn parse_command(input: &str) -> IResult<&str, ZplFormatCommand> {
     alt((
         parse_fo, parse_fd, parse_a, parse_fg, parse_ft, parse_ll, parse_ls, parse_pw, parse_fs,
-        parse_cf, parse_gb, parse_fr, parse_by, parse_bc, parse_be,
-        // add more commands here
+        parse_cf, parse_gb, parse_fr, parse_by, parse_bc, parse_be, parse_ci,
+        parse_fh, // add more commands here
     ))
     .parse(input)
 }
@@ -524,13 +540,15 @@ pub fn parse_zpl(input: &str) -> Result<Vec<ZplFormatCommand>, ParseError> {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+
     use crate::{
         BarcodeType, Code128Mode, Color, Justification, ParseError, ParseErrorKind,
         commands::{CompressionMethod, CompressionType, GraficData, Orientation, ZplFormatCommand},
         parse::{
-            parse_a, parse_bc, parse_be, parse_by, parse_cf, parse_fd, parse_fg, parse_fo,
-            parse_fr, parse_ft, parse_fx, parse_gb, parse_ll, parse_ls, parse_md, parse_mm,
-            parse_pw, parse_zpl, parse_zpl_intern,
+            parse_a, parse_bc, parse_be, parse_by, parse_cf, parse_ci, parse_fd, parse_fg,
+            parse_fh, parse_fo, parse_fr, parse_ft, parse_fx, parse_gb, parse_ll, parse_ls,
+            parse_md, parse_mm, parse_pw, parse_zpl, parse_zpl_intern,
         },
     };
 
@@ -814,6 +832,52 @@ mod tests {
         let input = "^MD-30";
         let (remain, zpl) = parse_md(&input).unwrap();
         assert_eq!(remain, "");
+    }
+
+    #[test]
+    fn parse_fh_test() {
+        let input = "^FH\\";
+        let (remain, zpl) = parse_fh(&input).unwrap();
+        assert_eq!(remain, "");
+        assert_eq!(zpl, ZplFormatCommand::FieldHexIndicator { char: '\\' })
+    }
+
+    #[test]
+    fn parse_ci_test() {
+        let input = "^CI28";
+        let (remain, zpl) = parse_ci(&input).unwrap();
+        assert_eq!(remain, "");
+        assert_eq!(
+            zpl,
+            ZplFormatCommand::CharacterSet {
+                num: 28,
+                mapping: HashMap::new()
+            }
+        );
+
+        let input = "^CI0,36,21";
+        let (remain, zpl) = parse_ci(&input).unwrap();
+        assert_eq!(remain, "");
+        assert_eq!(
+            zpl,
+            ZplFormatCommand::CharacterSet {
+                num: 0,
+                mapping: [(36, 21)].into()
+            }
+        )
+    }
+
+    #[test]
+    fn should_error_on_parse_ci_test() {
+        let input = "^CI0,1";
+        let err = parse_ci(&input).unwrap_err();
+        assert_eq!(
+            err,
+            nom::Err::Error(nom::error::Error {
+                input: "",
+                code: nom::error::ErrorKind::Char
+            })
+        )
     }
 
     #[test]

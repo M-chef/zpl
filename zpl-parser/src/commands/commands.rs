@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use nom::{
     IResult,
     error::{Error, ErrorKind},
@@ -130,6 +132,13 @@ pub enum ZplFormatCommand {
         rounding: u8,
     },
     Inverted,
+    FieldHexIndicator {
+        char: char,
+    },
+    CharacterSet {
+        num: u8,
+        mapping: HashMap<u8, u8>,
+    },
     FieldSeparator,
 }
 
