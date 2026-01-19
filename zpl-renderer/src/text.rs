@@ -43,7 +43,6 @@ impl FontConfig {
 
 #[derive(Clone, PartialEq)]
 struct Glyph {
-    #[cfg(debug_assertions)]
     ch: char,
     x: usize,
     y: usize,
@@ -75,7 +74,6 @@ impl Glyph {
     fn new(font_config: &FontConfig, ch: char) -> Self {
         let (metrics, bitmap) = font_config.font.rasterize(ch, font_config.font_height);
         Self {
-            #[cfg(debug_assertions)]
             ch,
             x: 0,
             y: 0,
