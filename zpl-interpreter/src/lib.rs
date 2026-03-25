@@ -2,7 +2,7 @@ mod barcode;
 mod datetime;
 mod decode_image;
 
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::cmp;
 
 use zpl_parser::{
     BarcodeType, ClockFormat, Color, Justification, TextBlockJustification, ZplFormatCommand,
@@ -57,6 +57,37 @@ pub enum ZplElement {
     },
 }
 
+impl ZplElement {
+    fn max_width(&self) -> usize {
+        match self {
+            ZplElement::Text {
+                x,
+                font_width,
+                content,
+                ..
+            // } => x + (content.chars().count() as f32 * font_width) as usize,
+            } => x + (content.chars().count() as f32 * font_width / 1.5) as usize,
+            ZplElement::Rectangle { x, width, .. } => x + width,
+            ZplElement::Image { x, bmp, .. } => x + bmp.width,
+            ZplElement::Barcode { x, content, .. } => x + content.bitmap.width,
+        }
+    }
+
+    fn max_height(&self) -> usize {
+        match self {
+            ZplElement::Text {
+                y,
+                font_height,
+                content,
+                ..
+            } => y + *font_height as usize,
+            ZplElement::Rectangle { y, height, .. } => y + height,
+            ZplElement::Image { y, bmp, .. } => y + bmp.height,
+            ZplElement::Barcode { y, content, .. } => y + content.bitmap.height,
+        }
+    }
+}
+
 struct BarcodeConfig {
     width: u8,
     width_ratio: f32,
@@ -100,6 +131,14 @@ pub struct SetRealTimeClock {
 }
 
 #[derive(Default)]
+struct LabelSize {
+    total_width: Option<usize>,
+    total_height: Option<usize>,
+    current_width: usize,
+    current_height: usize,
+}
+
+#[derive(Default)]
 struct InterpreterState {
     current_x: usize,
     current_y: usize,
@@ -112,6 +151,7 @@ struct InterpreterState {
     barcode_config: Option<BarcodeConfig>,
     escape_chars: Vec<char>,
     real_time_clock_setup: SetRealTimeClock,
+    label_size: LabelSize,
 }
 
 impl InterpreterState {
@@ -139,8 +179,6 @@ pub struct ZplLabel {
 pub fn interpret(cmds: &[ZplFormatCommand]) -> ZplLabel {
     let mut state = InterpreterState::default();
     let mut elements = Vec::new();
-    let mut width = 0usize;
-    let mut height = 0usize;
 
     for cmd in cmds {
         match cmd {
@@ -197,10 +235,14 @@ pub fn interpret(cmds: &[ZplFormatCommand]) -> ZplLabel {
                         field_block: state.fieldblock_state.clone(),
                     }
                 };
-                elements.push(elem)
+                state.label_size.current_height =
+                    cmp::max(state.label_size.current_height, elem.max_height());
+                state.label_size.current_width =
+                    cmp::max(state.label_size.current_width, elem.max_width());
+                elements.push(elem);
             }
-            ZplFormatCommand::LabelLength(h) => height = *h,
-            ZplFormatCommand::PrintWidth(w) => width = *w,
+            ZplFormatCommand::LabelLength(h) => state.label_size.total_height = Some(*h),
+            ZplFormatCommand::PrintWidth(w) => state.label_size.total_width = Some(*w),
             ZplFormatCommand::LabelShift(_) => {}
             ZplFormatCommand::Font {
                 name,
@@ -245,6 +287,10 @@ pub fn interpret(cmds: &[ZplFormatCommand]) -> ZplLabel {
                     y: state.current_y(height) as usize,
                     bmp,
                 };
+                state.label_size.current_height =
+                    cmp::max(state.label_size.current_height, elem.max_height());
+                state.label_size.current_width =
+                    cmp::max(state.label_size.current_width, elem.max_width());
                 elements.push(elem)
             }
             ZplFormatCommand::GraphicalBox {
@@ -264,7 +310,11 @@ pub fn interpret(cmds: &[ZplFormatCommand]) -> ZplLabel {
                     rounding: *rounding,
                     inverted: state.inverted,
                 };
-                elements.push(elem)
+                state.label_size.current_height =
+                    cmp::max(state.label_size.current_height, elem.max_height());
+                state.label_size.current_width =
+                    cmp::max(state.label_size.current_width, elem.max_width());
+                elements.push(elem);
             }
             ZplFormatCommand::Inverted => state.inverted = true,
             ZplFormatCommand::BarcodeConfig {
@@ -337,11 +387,22 @@ pub fn interpret(cmds: &[ZplFormatCommand]) -> ZplLabel {
                         current_font_width: state.font.current_font_width,
                         current_font_name: state.font.current_font_name,
                     },
+                    label_size: state.label_size,
                     ..Default::default()
                 }
             }
         }
     }
+
+    let width = state
+        .label_size
+        .total_width
+        .unwrap_or(state.label_size.current_width);
+
+    let height = state
+        .label_size
+        .total_height
+        .unwrap_or(state.label_size.current_height);
 
     ZplLabel {
         width,
