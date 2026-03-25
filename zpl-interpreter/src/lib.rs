@@ -1,11 +1,17 @@
 mod barcode;
+mod datetime;
 mod decode_image;
 
-use zpl_parser::{BarcodeType, Color, Justification, TextBlockJustification, ZplFormatCommand};
+use std::time::{SystemTime, UNIX_EPOCH};
+
+use zpl_parser::{
+    BarcodeType, ClockFormat, Color, Justification, TextBlockJustification, ZplFormatCommand,
+};
 
 pub use crate::decode_image::DecodedBitmap;
 use crate::{
     barcode::{BarcodeContent, barcode_from_content},
+    datetime::format_timestamp,
     decode_image::decode_zpl_graphic,
 };
 
@@ -82,6 +88,17 @@ pub struct FieldBlock {
     pub hanging_indent: usize,
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct SetRealTimeClock {
+    month: Option<u8>,
+    day: Option<u8>,
+    year: Option<usize>,
+    hour: Option<u8>,
+    minute: Option<u8>,
+    second: Option<u8>,
+    format: ClockFormat,
+}
+
 #[derive(Default)]
 struct InterpreterState {
     current_x: usize,
@@ -93,6 +110,8 @@ struct InterpreterState {
     inverted: bool,
     barcode_type: Option<BarcodeType>,
     barcode_config: Option<BarcodeConfig>,
+    escape_chars: Vec<char>,
+    real_time_clock_setup: SetRealTimeClock,
 }
 
 impl InterpreterState {
@@ -145,7 +164,7 @@ pub fn interpret(cmds: &[ZplFormatCommand]) -> ZplLabel {
                 state.current_justification = *justification;
             }
             ZplFormatCommand::FieldData(text) => {
-                let content = text.clone();
+                let mut content = text.clone();
                 let elem = if let Some(barcode_type) = state.barcode_type
                     && let Ok(mut barcode_content) =
                         barcode_from_content(state.barcode_config.as_ref(), barcode_type, &content)
@@ -160,6 +179,12 @@ pub fn interpret(cmds: &[ZplFormatCommand]) -> ZplLabel {
                         content: barcode_content,
                     }
                 } else {
+                    let escape_chars = &state.escape_chars;
+                    if !escape_chars.is_empty() {
+                        content =
+                            format_timestamp(&content, escape_chars, &state.real_time_clock_setup);
+                    }
+
                     ZplElement::Text {
                         x: state.current_x(),
                         y: state.current_y(state.font.current_font_height as usize),
@@ -270,6 +295,39 @@ pub fn interpret(cmds: &[ZplFormatCommand]) -> ZplLabel {
                     justification: *justification,
                     hanging_indent: *hanging_indent,
                 })
+            }
+            ZplFormatCommand::RealTimeClockMode { mode, language } => {}
+            ZplFormatCommand::RealTimeClockEscapeChar {
+                first,
+                second,
+                third,
+            } => {
+                state.escape_chars.push(*first);
+                if let Some(second) = second {
+                    state.escape_chars.push(*second);
+                }
+                if let Some(third) = third {
+                    state.escape_chars.push(*third);
+                }
+            }
+            ZplFormatCommand::SetRealTimeClock {
+                month,
+                day,
+                year,
+                hour,
+                minute,
+                second,
+                format,
+            } => {
+                state.real_time_clock_setup = SetRealTimeClock {
+                    month: *month,
+                    day: *day,
+                    year: *year,
+                    hour: *hour,
+                    minute: *minute,
+                    second: *second,
+                    format: *format,
+                }
             }
             ZplFormatCommand::FieldSeparator => {
                 // reset state

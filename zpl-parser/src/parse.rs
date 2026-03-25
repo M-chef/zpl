@@ -6,8 +6,8 @@ use nom::{
         take,
     },
     character::complete::{
-        alpha1, alphanumeric1, anychar, char, i8 as parse_i8, isize as parse_isize, line_ending,
-        multispace0, u8 as parse_u8, usize as parse_usize,
+        alpha1, alphanumeric1, anychar, char, digit1, i8 as parse_i8, isize as parse_isize,
+        line_ending, multispace0, satisfy, u8 as parse_u8, usize as parse_usize,
     },
     combinator::{complete, cut, map, not, opt, peek},
     error::{Error, ErrorKind},
@@ -17,7 +17,8 @@ use nom::{
 };
 
 use crate::{
-    BarcodeType, Code128Mode, Color, ParseError, ParseErrorKind, TextBlockJustification,
+    BarcodeType, ClockFormat, ClockLanguage, Code128Mode, Color, ParseError, ParseErrorKind,
+    TextBlockJustification,
     commands::{CompressionMethod, CompressionType, GraficData, Orientation, ZplFormatCommand},
 };
 
@@ -491,6 +492,76 @@ fn parse_pq(input: &str) -> IResult<&str, ()> {
     Ok((input, ()))
 }
 
+fn parse_sl(input: &str) -> IResult<&str, ZplFormatCommand> {
+    let (input, _) = tag("^SL")(input)?;
+    let (input, mode) = alpha1(input)?;
+    let mode = mode.into();
+    let (input, language) = opt(preceded(char(','), parse_u8)).parse(input)?;
+    let language = language.into();
+    Ok((
+        input,
+        ZplFormatCommand::RealTimeClockMode { mode, language },
+    ))
+}
+
+fn parse_fc(input: &str) -> IResult<&str, ZplFormatCommand> {
+    let (input, _) = tag("^FC")(input)?;
+    let (input, first) = opt(satisfy(|c| c != ',')).parse(input)?;
+    let first = first.unwrap_or('%');
+    let (input, second) = opt(preceded(char(','), anychar)).parse(input)?;
+    let (input, third) = opt(preceded(char(','), anychar)).parse(input)?;
+    // let third = third.map(|(_, c)| c);
+    Ok((
+        input,
+        ZplFormatCommand::RealTimeClockEscapeChar {
+            first,
+            second,
+            third,
+        },
+    ))
+}
+
+fn parse_st(input: &str) -> IResult<&str, ZplFormatCommand> {
+    let (input, _) = tag("^ST")(input)?;
+    let (input, month) = opt(parse_u8).parse(input)?;
+
+    // consume the comma, but the value after it is optional
+    let (input, day) = opt(preceded(char(','), opt(digit1))).parse(input)?;
+    let day: Option<u8> = day.flatten().and_then(|n| n.parse().ok());
+
+    let (input, year) = opt(preceded(char(','), opt(digit1))).parse(input)?;
+    let year: Option<usize> = year.flatten().and_then(|n| n.parse().ok());
+
+    let (input, hour) = opt(preceded(char(','), opt(digit1))).parse(input)?;
+    let hour = hour.flatten().and_then(|n| n.parse().ok());
+
+    let (input, minute) = opt(preceded(char(','), opt(digit1))).parse(input)?;
+    let minute = minute.flatten().and_then(|n| n.parse().ok());
+
+    let (input, second) = opt(preceded(char(','), opt(digit1))).parse(input)?;
+    let second = second.flatten().and_then(|n| n.parse().ok());
+
+    let (input, format) = opt(preceded(char(','), opt(alpha1))).parse(input)?;
+    let format = match format.flatten() {
+        Some(f) if f == "A" => ClockFormat::AM,
+        Some(f) if f == "P" => ClockFormat::PM,
+        Some(_) => ClockFormat::Military,
+        None => ClockFormat::Military,
+    };
+    Ok((
+        input,
+        ZplFormatCommand::SetRealTimeClock {
+            month,
+            day,
+            year,
+            hour,
+            minute,
+            second,
+            format,
+        },
+    ))
+}
+
 /// parse ^XA as start of label definition
 fn parse_xa(input: &str) -> IResult<&str, ()> {
     let (input, _) = tag("^XA")(input)?;
@@ -506,8 +577,8 @@ fn parse_xz(input: &str) -> IResult<&str, ()> {
 pub fn parse_command(input: &str) -> IResult<&str, ZplFormatCommand> {
     alt((
         parse_fo, parse_fd, parse_a, parse_fg, parse_ft, parse_ll, parse_ls, parse_pw, parse_fs,
-        parse_cf, parse_gb, parse_fr, parse_by, parse_bc, parse_be, parse_ci, parse_fh,
-        parse_fb, // add more commands here
+        parse_cf, parse_gb, parse_fr, parse_by, parse_bc, parse_be, parse_ci, parse_fh, parse_fb,
+        parse_sl, parse_fc, parse_st, // add more commands here
     ))
     .parse(input)
 }
@@ -589,13 +660,14 @@ mod tests {
     use std::collections::HashMap;
 
     use crate::{
-        BarcodeType, Code128Mode, Color, Justification, ParseError, ParseErrorKind,
-        TextBlockJustification,
+        BarcodeType, ClockFormat, ClockLanguage, ClockMode, Code128Mode, Color, Justification,
+        ParseError, ParseErrorKind, TextBlockJustification,
         commands::{CompressionMethod, CompressionType, GraficData, Orientation, ZplFormatCommand},
         parse::{
-            parse_a, parse_bc, parse_be, parse_by, parse_cf, parse_ci, parse_fb, parse_fd,
-            parse_fg, parse_fh, parse_fo, parse_fr, parse_ft, parse_fx, parse_gb, parse_ll,
-            parse_ls, parse_md, parse_mm, parse_pq, parse_pw, parse_zpl, parse_zpl_intern,
+            parse_a, parse_bc, parse_be, parse_by, parse_cf, parse_ci, parse_fb, parse_fc,
+            parse_fd, parse_fg, parse_fh, parse_fo, parse_fr, parse_ft, parse_fx, parse_gb,
+            parse_ll, parse_ls, parse_md, parse_mm, parse_pq, parse_pw, parse_sl, parse_st,
+            parse_zpl, parse_zpl_intern,
         },
     };
 
@@ -967,6 +1039,112 @@ mod tests {
         let input = "^PQ10,0,0,Y,N";
         let (remain, _) = parse_pq(&input).unwrap();
         assert_eq!(remain, "");
+    }
+
+    #[test]
+    fn parse_sl_test() {
+        let input = "^SLT";
+        let (remain, zpl) = parse_sl(&input).unwrap();
+        assert_eq!(remain, "");
+
+        assert_eq!(
+            zpl,
+            ZplFormatCommand::RealTimeClockMode {
+                mode: ClockMode::Now,
+                language: ClockLanguage::English
+            }
+        );
+
+        let input = "^SLT,4";
+        let (remain, zpl) = parse_sl(&input).unwrap();
+        assert_eq!(remain, "");
+
+        assert_eq!(
+            zpl,
+            ZplFormatCommand::RealTimeClockMode {
+                mode: ClockMode::Now,
+                language: ClockLanguage::German
+            }
+        );
+    }
+
+    #[test]
+    fn parse_fc_test() {
+        let input = "^FC%,+";
+        let (remain, zpl) = parse_fc(&input).unwrap();
+        assert_eq!(remain, "");
+
+        assert_eq!(
+            zpl,
+            ZplFormatCommand::RealTimeClockEscapeChar {
+                first: '%',
+                second: Some('+'),
+                third: None,
+            }
+        );
+
+        let input = "^FC";
+        let (remain, zpl) = parse_fc(&input).unwrap();
+        assert_eq!(remain, "");
+
+        assert_eq!(
+            zpl,
+            ZplFormatCommand::RealTimeClockEscapeChar {
+                first: '%',
+                second: None,
+                third: None,
+            }
+        );
+
+        let input = "^FC,+";
+        let (remain, zpl) = parse_fc(&input).unwrap();
+        assert_eq!(remain, "");
+
+        assert_eq!(
+            zpl,
+            ZplFormatCommand::RealTimeClockEscapeChar {
+                first: '%',
+                second: Some('+'),
+                third: None,
+            }
+        );
+    }
+
+    #[test]
+    fn parse_st_test() {
+        let input = "^ST";
+        let (remain, zpl) = parse_st(&input).unwrap();
+        assert_eq!(remain, "");
+
+        assert_eq!(
+            zpl,
+            ZplFormatCommand::SetRealTimeClock {
+                month: None,
+                day: None,
+                year: None,
+                hour: None,
+                minute: None,
+                second: None,
+                format: ClockFormat::Military
+            }
+        );
+
+        let input = "^ST5,,2025,,10,,A";
+        let (remain, zpl) = parse_st(&input).unwrap();
+        assert_eq!(remain, "");
+
+        assert_eq!(
+            zpl,
+            ZplFormatCommand::SetRealTimeClock {
+                month: Some(5),
+                day: None,
+                year: Some(2025),
+                hour: None,
+                minute: Some(10),
+                second: None,
+                format: ClockFormat::AM
+            }
+        );
     }
 
     #[test]
