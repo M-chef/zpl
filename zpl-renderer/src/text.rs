@@ -92,34 +92,29 @@ impl Glyph {
 
     fn start_at(&mut self, position: Position) {
         self.x = position.x;
-        self.y = position.y
+        self.y = position.y;
     }
 
     fn position_next_to(&mut self, previous: &Self) {
-        // self.x =
-        //     ((previous.x + previous.advance_width.round() as usize) as isize + self.xmin) as usize;
-        // self.x = ((previous.x as f32 + previous.advance_width) as isize + self.xmin) as usize;
-        self.x = ((previous.x + previous.advance_width.round() as usize) as isize) as usize;
+        self.x = (previous.x + previous.advance_width.round() as usize) as usize;
         let height_diff = previous.height as isize - self.height as isize;
         let ymin_diff = previous.ymin - self.ymin;
-        self.y = (previous.y as isize + height_diff + ymin_diff) as usize
+        self.y = (previous.y as isize + height_diff + ymin_diff) as usize;
     }
 
-    /// transform bitmap to rgba data
     fn to_rbga(&self) -> Vec<u8> {
         let w = self.width as u32;
         let h = self.height as u32;
         let mut buf = Vec::with_capacity((w * h * 4) as usize);
         for &alpha in &self.bitmap {
-            buf.push(0); // R
-            buf.push(0); // G
-            buf.push(0); // B
-            buf.push(alpha); // A
+            buf.push(0);
+            buf.push(0);
+            buf.push(0);
+            buf.push(alpha);
         }
         buf
     }
 
-    /// Generate glyph pixmap from rasterized info
     fn to_pixmap(&self) -> Result<Pixmap, Box<dyn std::error::Error>> {
         let buf = self.to_rbga();
         let w = self.width as u32;
@@ -195,7 +190,9 @@ pub struct Text {
     field_box: Option<FieldBox>,
 }
 
-type Words = Vec<Vec<Glyph>>;
+/// Line → word → glyph. Each inner Vec<Glyph> is one word (including its
+/// trailing space character, if any). Each outer Vec is one visual line.
+type Lines = Vec<Vec<Vec<Glyph>>>;
 type Word = Vec<Glyph>;
 
 impl Text {
@@ -219,91 +216,208 @@ impl Text {
         self.field_box.as_ref().map(|b| self.position.x + b.width)
     }
 
-    fn to_words(&self) -> Words {
-        let mut words: Words = Vec::new();
-        let mut word: Word = Vec::new();
+    // -----------------------------------------------------------------------
+    // Core layout: build lines of words
+    // -----------------------------------------------------------------------
 
-        self.content.chars().for_each(|ch| {
+    /// Build the full line/word/glyph structure.
+    ///
+    /// Glyphs are positioned left-to-right; `check_word_wrap` handles
+    /// reflowing a word onto the next line when it exceeds the field bound.
+    /// Whether that wrap happened is communicated back via the bool return,
+    /// so `to_lines` can open a fresh line bucket for the completed word.
+    fn to_lines(&self) -> Lines {
+        let mut lines: Lines = vec![vec![]];
+        let mut word: Word = Vec::new();
+        let mut word_was_wrapped = false;
+
+        for ch in self.content.chars() {
             let mut glyph = Glyph::new(&self.font_config, ch);
 
-            if let Some(previous) = word.last() {
-                // last glyph in same word
-                glyph.position_next_to(previous)
-            } else if let Some(previous) = words.last().and_then(|l| l.last()) {
-                // last glyph in last word
-                glyph.position_next_to(previous)
+            // Position relative to whatever came last.
+            if let Some(prev) = word.last() {
+                glyph.position_next_to(prev);
+            } else if let Some(prev) = lines.last().and_then(|l| l.last()).and_then(|w| w.last()) {
+                glyph.position_next_to(prev);
             } else {
-                // start glyph at text start position
                 glyph.start_at(self.position);
             }
 
             word.push(glyph);
-            self.check_word_wrap(&mut word);
 
-            // make new word on space character
-            if let ' ' = ch {
-                words.push(word.drain(..).collect());
+            if self.check_word_wrap(&mut word) {
+                word_was_wrapped = true;
             }
-        });
 
-        // only push remaining word if not empty
+            // Space terminates the current word.
+            if ch == ' ' {
+                let completed: Vec<Glyph> = word.drain(..).collect();
+                if word_was_wrapped {
+                    lines.push(vec![completed]);
+                } else {
+                    lines.last_mut().unwrap().push(completed);
+                }
+                word_was_wrapped = false;
+            }
+        }
+
+        // Flush whatever remains (the last word, if no trailing space).
         if !word.is_empty() {
-            words.push(word.drain(..).collect());
+            self.check_word_wrap(&mut word);
+            if word_was_wrapped {
+                lines.push(vec![word]);
+            } else {
+                lines.last_mut().unwrap().push(word);
+            }
         }
-        words
+
+        lines
     }
 
-    /// set all glyphs in word to new line if glyph would exeed fieldbox settings
-    fn check_word_wrap(&self, word: &mut Vec<Glyph>) {
-        let last_glyph_in_word = word.last().expect("This is not allowed on empty words");
-        if self
+    /// Reflow `word` onto the next line when its last glyph exceeds the right
+    /// field bound.  Returns `true` when a wrap was actually performed.
+    fn check_word_wrap(&self, word: &mut Word) -> bool {
+        let last = word.last().expect("check_word_wrap called on empty word");
+
+        if !self
             .right_field_bound()
-            .is_some_and(|rb| last_glyph_in_word.right_bound() > rb)
+            .is_some_and(|rb| last.right_bound() > rb)
         {
-            let mut position = self.position;
-            position.y += self.font_config.font_height.round() as usize;
+            return false;
+        }
 
-            let mut word_iter = word.iter_mut();
-            let mut previous = word_iter.next();
-            if let Some(ref mut first) = previous {
-                // dbg!(first.ch, first.x);
-                first.start_at(position);
+        // Move the whole word down by one line height, starting at the
+        // field's left edge.
+        let mut position = self.position;
+        position.y += self.font_config.font_height.round() as usize;
+
+        let mut iter = word.iter_mut();
+        let mut prev = iter.next();
+        if let Some(first) = prev.as_deref_mut() {
+            first.start_at(position);
+        }
+        for next in iter {
+            next.position_next_to(prev.unwrap());
+            prev = Some(next);
+        }
+
+        true
+    }
+
+    // -----------------------------------------------------------------------
+    // Justification
+    // -----------------------------------------------------------------------
+
+    /// Shift glyph x-coordinates on each line to satisfy `field_box.justification`.
+    ///
+    /// Called after `to_lines()`, before drawing. Mutates positions in-place.
+    fn apply_justification(&self, lines: &mut Lines) {
+        let field_box = match &self.field_box {
+            Some(fb) => fb,
+            None => return,
+        };
+
+        if field_box.justification == TextBlockJustification::Left {
+            return; // already left-aligned, nothing to do
+        }
+
+        let last_line_idx = lines.len().saturating_sub(1);
+
+        for (line_idx, line_words) in lines.iter_mut().enumerate() {
+            if line_words.is_empty() {
+                continue;
             }
-            while let Some(next) = word_iter.next() {
-                let prev = previous.unwrap();
-                next.position_next_to(&prev);
-                previous = Some(next);
+
+            // Line content width: right bound of the furthest non-space glyph,
+            // relative to the field's left edge.
+            let content_right = line_words
+                .iter()
+                .flat_map(|w| w.iter())
+                .filter(|g| g.ch != ' ')
+                .map(|g| g.right_bound())
+                .max()
+                .unwrap_or(self.position.x);
+            let line_width = content_right.saturating_sub(self.position.x);
+
+            // Justified text treats its last line as Left (standard typography).
+            let effective = if line_idx == last_line_idx
+                && field_box.justification == TextBlockJustification::Justified
+            {
+                TextBlockJustification::Left
+            } else {
+                field_box.justification
+            };
+
+            match effective {
+                TextBlockJustification::Left => {
+                    // nothing
+                }
+
+                TextBlockJustification::Right => {
+                    let offset = field_box.width.saturating_sub(line_width);
+                    for glyph in line_words.iter_mut().flatten() {
+                        glyph.x += offset;
+                    }
+                }
+
+                TextBlockJustification::Center => {
+                    let offset = field_box.width.saturating_sub(line_width) / 2;
+                    for glyph in line_words.iter_mut().flatten() {
+                        glyph.x += offset;
+                    }
+                }
+
+                TextBlockJustification::Justified => {
+                    // Distribute the leftover space evenly *between* words by
+                    // adding a cumulative offset to each word after the first.
+                    // The trailing-space glyph that's already part of each word
+                    // provides the natural gap; this just stretches it.
+                    let n_words = line_words.len();
+                    if n_words <= 1 {
+                        continue; // can't distribute with a single word
+                    }
+                    let extra = field_box.width.saturating_sub(line_width) as f32;
+                    let gap = extra / (n_words - 1) as f32;
+                    let mut cumulative = 0.0_f32;
+
+                    for word in line_words.iter_mut() {
+                        let shift = cumulative.round() as usize;
+                        for glyph in word.iter_mut() {
+                            glyph.x += shift;
+                        }
+                        cumulative += gap;
+                    }
+                }
             }
         }
     }
+
+    // -----------------------------------------------------------------------
+    // Public helpers
+    // -----------------------------------------------------------------------
 
     pub fn width(&self) -> usize {
-        if self.field_box.is_some() {
-            let field_box = self.field_box.as_ref().unwrap();
-            return field_box.width;
+        if let Some(fb) = &self.field_box {
+            return fb.width;
         }
 
-        let end = self
-            .to_words()
-            .last()
-            .and_then(|word| word.last())
-            .map(|glyph| glyph.x + glyph.advance_width.round() as usize)
-            .unwrap_or(0);
+        // Without a field box, report the max right extent across all lines.
+        let max_right = self
+            .to_lines()
+            .into_iter()
+            .flatten()
+            .flatten()
+            .map(|g| g.right_bound())
+            .max()
+            .unwrap_or(self.position.x);
 
-        end - self.position.x
-    }
-
-    fn adjust_position(&self) -> f32 {
-        match self.justification {
-            Justification::Left => self.position.x as f32,
-            Justification::Right => self.position.x as f32 - self.width() as f32,
-            Justification::Auto => self.position.x as f32 - self.width() as f32 / 2.0,
-        }
+        max_right.saturating_sub(self.position.x)
     }
 
     fn draw_words(&self, target: &mut Pixmap) -> Result<(), Box<dyn Error>> {
-        let words = self.to_words();
-        for word in words {
+        let mut lines = self.to_lines();
+        self.apply_justification(&mut lines);
+        for word in lines.into_iter().flatten() {
             for glyph in word {
                 glyph.draw(target)?;
             }
@@ -313,7 +427,7 @@ impl Text {
 }
 
 impl Drawable for Text {
-    fn draw(&self, target: &mut tiny_skia::Pixmap) -> Result<(), Box<dyn Error>> {
+    fn draw(&self, target: &mut Pixmap) -> Result<(), Box<dyn Error>> {
         self.draw_words(target)
     }
 }
@@ -545,7 +659,7 @@ mod tests {
         let justification = zpl_parser::Justification::Left;
         let text = Text::new(input, font_config.clone(), position, justification, None);
 
-        let words = text.to_words();
+        let lines = text.to_lines();
         let glyph_1 = Glyph::new(&font_config, 'S');
         let mut glyph_2 = Glyph::new(&font_config, ' ');
         glyph_2.position_next_to(&glyph_1);
@@ -553,15 +667,10 @@ mod tests {
         glyph_3.position_next_to(&glyph_2);
         let mut glyph_4 = Glyph::new(&font_config, 'o');
         glyph_4.position_next_to(&glyph_3);
-        assert_eq!(words, vec![vec![glyph_1, glyph_2], vec![glyph_3, glyph_4]]);
-
-        // let mut pixmap = Pixmap::new(35, 18).unwrap();
-        // for w in words {
-        //     for gl in w {
-        //         gl.draw(&mut pixmap).unwrap();
-        //     }
-        // }
-        // pixmap.save_png("draw glyphs.png").unwrap();
+        assert_eq!(
+            lines,
+            vec![vec![vec![glyph_1, glyph_2], vec![glyph_3, glyph_4]]]
+        );
     }
 
     #[test]
@@ -574,7 +683,7 @@ mod tests {
         let justification = zpl_parser::Justification::Left;
         let text = Text::new(input, font_config.clone(), position, justification, None);
 
-        let words = text.to_words();
+        let words = text.to_lines();
         assert!(!words.last().unwrap().is_empty())
     }
 
@@ -632,9 +741,9 @@ mod tests {
             justification,
             Some(fielbox),
         );
-        let words = text.to_words();
+        let lines = text.to_lines();
 
-        let (first_line, second_line) = words.split_at(6);
+        let (first_line, second_line) = (lines.first().unwrap(), lines.iter().nth(1).unwrap());
         for glyph in first_line.iter().flatten() {
             assert!(glyph.y + glyph.height <= 20)
         }
