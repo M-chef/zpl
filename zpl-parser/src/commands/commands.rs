@@ -47,21 +47,21 @@ impl Orientation {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum Justification {
+pub enum Alignment {
     #[default]
     Left, // 0
     Right, // 1
     Auto,  // 2
 }
 
-impl From<Option<u8>> for Justification {
+impl From<Option<u8>> for Alignment {
     fn from(value: Option<u8>) -> Self {
         match value {
-            Some(u) if u == 0 => Justification::Left,
-            Some(u) if u == 1 => Justification::Right,
-            Some(u) if u == 2 => Justification::Auto,
-            Some(_) => Justification::Left,
-            None => Justification::Left,
+            Some(u) if u == 0 => Alignment::Left,
+            Some(u) if u == 1 => Alignment::Right,
+            Some(u) if u == 2 => Alignment::Auto,
+            Some(_) => Alignment::Left,
+            None => Alignment::Left,
         }
     }
 }
@@ -206,12 +206,12 @@ pub enum ZplFormatCommand {
     FieldOrigin {
         x: usize,
         y: usize,
-        justification: Justification,
+        justification: Alignment,
     },
     FieldTypeset {
         x: usize,
         y: usize,
-        justification: Justification,
+        justification: Alignment,
     },
     FieldData(String),
     GraphicField {

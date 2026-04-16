@@ -1,12 +1,6 @@
 use base64::{Engine, engine::general_purpose};
+use intermediate_representation::DecodedBitmap;
 use zpl_parser::CompressionMethod;
-
-#[derive(Debug, Clone, Default)]
-pub struct DecodedBitmap {
-    pub width: usize,
-    pub height: usize,
-    pub pixels: Vec<u8>, // 0 = white, 1 = black
-}
 
 pub fn decode_zpl_graphic(
     // compression: CompressionType,

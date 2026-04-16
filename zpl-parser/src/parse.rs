@@ -672,7 +672,7 @@ mod tests {
     use std::collections::HashMap;
 
     use crate::{
-        BarcodeType, ClockFormat, ClockLanguage, ClockMode, Code128Mode, Color, Justification,
+        Alignment, BarcodeType, ClockFormat, ClockLanguage, ClockMode, Code128Mode, Color,
         ParseError, ParseErrorKind, TextBlockJustification,
         commands::{CompressionMethod, CompressionType, GraficData, Orientation, ZplFormatCommand},
         parse::{
@@ -784,7 +784,7 @@ mod tests {
             ZplFormatCommand::FieldOrigin {
                 x: 349,
                 y: 327,
-                justification: Justification::Left
+                justification: Alignment::Left
             }
         );
         let input = "^FO349,327,2^FT";
@@ -795,7 +795,7 @@ mod tests {
             ZplFormatCommand::FieldOrigin {
                 x: 349,
                 y: 327,
-                justification: Justification::Auto
+                justification: Alignment::Auto
             }
         );
     }
@@ -810,7 +810,7 @@ mod tests {
             ZplFormatCommand::FieldTypeset {
                 x: 349,
                 y: 327,
-                justification: Justification::Left
+                justification: Alignment::Left
             }
         );
         let input = "^FT349,327,2";
@@ -821,7 +821,7 @@ mod tests {
             ZplFormatCommand::FieldTypeset {
                 x: 349,
                 y: 327,
-                justification: Justification::Auto
+                justification: Alignment::Auto
             }
         );
     }
@@ -1202,7 +1202,7 @@ mod tests {
                 ZplFormatCommand::FieldTypeset {
                     x: 86,
                     y: 78,
-                    justification: Justification::Left
+                    justification: Alignment::Left
                 },
                 ZplFormatCommand::Font {
                     name: '0',
@@ -1245,7 +1245,7 @@ mod tests {
     #[test]
     fn should_error_on_invalid_syntax_command() {
         let input = "^XAInvalidCommand^XZ";
-        let err = dbg!(parse_zpl(input)).unwrap_err();
+        let err = parse_zpl(input).unwrap_err();
         assert_eq!(
             err,
             ParseError {

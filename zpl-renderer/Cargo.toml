@@ -4,8 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-zpl-parser = { path = "../zpl-parser" }
-zpl-interpreter = { path = "../zpl-interpreter" }
+intermediate-representation = { path = "../intermediate-representation" }
 tiny-skia = { workspace = true }
 fontdue = { workspace = true }
 # image = { workspace = true }

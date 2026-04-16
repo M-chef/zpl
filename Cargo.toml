@@ -1,9 +1,10 @@
 [workspace]
 members = [
-"zpl-parser",
-"zpl-interpreter",
-"zpl-renderer",
-"zpl"
+    "zpl-parser",
+    "zpl-interpreter",
+    "zpl-renderer",
+    "zpl",
+    "intermediate-representation"
 ]
 
 resolver = "3"

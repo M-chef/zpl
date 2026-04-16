@@ -335,6 +335,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "intermediate-representation"
+version = "0.1.0"
+dependencies = [
+ "fontdue",
+ "rxing",
+]
+
+[[package]]
 name = "itoa"
 version = "1.0.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -855,6 +863,7 @@ dependencies = [
 name = "zpl"
 version = "0.1.0"
 dependencies = [
+ "intermediate-representation",
  "zpl-interpreter",
  "zpl-parser",
  "zpl-renderer",
@@ -866,6 +875,7 @@ version = "0.1.0"
 dependencies = [
  "base64",
  "flate2",
+ "intermediate-representation",
  "rxing",
  "zpl-parser",
 ]
@@ -882,7 +892,6 @@ name = "zpl-renderer"
 version = "0.1.0"
 dependencies = [
  "fontdue",
+ "intermediate-representation",
  "tiny-skia",
- "zpl-interpreter",
- "zpl-parser",
 ]

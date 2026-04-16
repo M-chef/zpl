@@ -1,0 +1,8 @@
+[package]
+name = "intermediate-representation"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+rxing = { workspace = true }
+fontdue = { workspace = true }

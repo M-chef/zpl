@@ -9,8 +9,8 @@ pub enum ZplErrorKind {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ZplError {
-    kind: ZplErrorKind,
-    message: String,
+    pub kind: ZplErrorKind,
+    pub message: String,
 }
 
 impl From<zpl_parser::ParseError> for ZplError {

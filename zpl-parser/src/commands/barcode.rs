@@ -42,7 +42,7 @@ impl BarcodeType {
         }
     }
 
-    pub fn show_content(&self) -> bool {
+    pub fn show_text(&self) -> bool {
         match self {
             BarcodeType::Code39 => todo!(),
             BarcodeType::Code128 { show_text, .. } => *show_text,

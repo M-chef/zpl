@@ -87,7 +87,7 @@ pub(super) fn barcode_from_content(
         BarcodeType::DataMatrix => todo!(),
     };
 
-    if !barcode_type.show_content() {
+    if !barcode_type.show_text() {
         barcode_content.text_elements.clear();
     }
 

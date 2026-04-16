@@ -7,3 +7,4 @@ edition = "2024"
 zpl-parser = { version = "0.1", path = "../zpl-parser" }
 zpl-interpreter = { version = "0.1", path = "../zpl-interpreter" }
 zpl-renderer = { version = "0.1", path = "../zpl-renderer" }
+intermediate-representation = { version = "0.1", path = "../intermediate-representation" }
