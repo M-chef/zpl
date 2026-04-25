@@ -2,7 +2,10 @@ use std::error::Error;
 
 use rxing::{BarcodeFormat, EncodeHintValue, EncodeHints, Writer, oned::Code128Writer};
 
-use crate::{DecodedBitmap, barcode::bitmap_from_bitmatrix};
+use crate::{
+    Alignment, DecodedBitmap, Element, Justification, OCR_B, YReference,
+    barcode::bitmap_from_bitmatrix, hri_ratios,
+};
 
 pub(crate) fn generate_code_128(
     target_width: usize,
@@ -20,6 +23,28 @@ pub(crate) fn generate_code_128(
     let bitmap = bitmap_from_bitmatrix(bit_matrix)?;
 
     Ok(bitmap)
+}
+
+pub(crate) fn generate_code_128_text(
+    x: f32,
+    y: f32,
+    data: &str,
+    bmp: &DecodedBitmap,
+) -> Vec<Element> {
+    let font_size = hri_ratios::CODE128 * bmp.width as f32;
+    vec![Element::Text {
+        x: x,
+        y: y + bmp.height as f32 + font_size * 1.2,
+        max_width: Some(bmp.width as f32),
+        lines: 1,
+        font: OCR_B.to_string(),
+        font_size,
+        content: data.to_string(),
+        alignment: Alignment::Left,
+        justification: Justification::Center,
+        y_reference: YReference::Baseline,
+        inverted: false,
+    }]
 }
 
 // pub(crate) fn generate_code_128_text(

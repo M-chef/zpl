@@ -2,7 +2,10 @@ use std::error::Error;
 
 use rxing::{BarcodeFormat, EncodeHintValue, EncodeHints, Writer, oned::EAN13Writer};
 
-use crate::{DecodedBitmap, barcode::bitmap_from_bitmatrix};
+use crate::{
+    Alignment, DecodedBitmap, Element, Justification, OCR_B, YReference,
+    barcode::bitmap_from_bitmatrix, hri_ratios,
+};
 
 pub(crate) fn generate_ean13(
     target_width: usize,
@@ -19,9 +22,71 @@ pub(crate) fn generate_ean13(
         target_height as i32,
         &EncodeHints::default().with(EncodeHintValue::Margin("0".into())),
     )?;
-    let bitmap = bitmap_from_bitmatrix(bitmatrix)?;
+
+    let module_width = target_width as f32 / ean13_modules(&content) as f32;
+    // let rows = bitmatrix.getRowSize();
+    // let last_row = bitmatrix.getRow(rows as u32);
+
+    let mut bitmap = bitmap_from_bitmatrix(bitmatrix)?;
+    bitmap.enlarge_modules_for_ean13(module_width as usize);
 
     Ok(bitmap)
+}
+
+pub(crate) fn generate_ean13_text(
+    x: f32,
+    y: f32,
+    data: &str,
+    bmp: &DecodedBitmap,
+) -> Result<Vec<Element>, Box<dyn Error>> {
+    let data = check_ean_content(data)?;
+    let font_size = hri_ratios::EAN13 * bmp.width as f32;
+
+    let y = y + bmp.height as f32 + font_size * 0.6;
+    let first = Element::Text {
+        x,
+        y,
+        max_width: Some(bmp.width as f32),
+        lines: 1,
+        font: OCR_B.to_string(),
+        font_size,
+        content: data[0..1].to_string(),
+        // content: "test".to_string(),
+        alignment: Alignment::Right,
+        justification: Justification::Left,
+        y_reference: YReference::Baseline,
+        inverted: false,
+    };
+    let second = Element::Text {
+        // x: x + bmp.width as f32 / 4.,
+        x,
+        y,
+        max_width: Some(bmp.width as f32 / 2.),
+        lines: 1,
+        font: OCR_B.to_string(),
+        font_size,
+        content: data[1..7].to_string(),
+        alignment: Alignment::Left,
+        justification: Justification::Center,
+        y_reference: YReference::Baseline,
+        inverted: false,
+    };
+    let third = Element::Text {
+        x: x + bmp.width as f32 / 2.,
+        y,
+        max_width: Some(bmp.width as f32 / 2.),
+        lines: 1,
+        font: OCR_B.to_string(),
+        font_size,
+        content: data[7..].to_string(),
+        alignment: Alignment::Left,
+        justification: Justification::Center,
+        y_reference: YReference::Baseline,
+        inverted: false,
+    };
+    let texts = vec![first, second, third];
+
+    Ok(texts)
 }
 
 // pub(crate) fn generate_ean13_text(

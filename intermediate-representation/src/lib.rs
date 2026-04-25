@@ -90,6 +90,38 @@ impl std::fmt::Debug for DecodedBitmap {
     }
 }
 
+impl DecodedBitmap {
+    fn enlarge_modules_for_ean13(&mut self, module_width: usize) {
+        for _ in 0..=self.height / 15 {
+            self.add_module(1, module_width, 1u8);
+            self.add_module(1, module_width, 0u8);
+            self.add_module(1, module_width, 1u8);
+
+            self.add_module(43, module_width, 0u8);
+
+            self.add_module(1, module_width, 1u8);
+            self.add_module(1, module_width, 0u8);
+            self.add_module(1, module_width, 1u8);
+
+            self.add_module(43, module_width, 0u8);
+
+            self.add_module(1, module_width, 1u8);
+            self.add_module(1, module_width, 0u8);
+            self.add_module(1, module_width, 1u8);
+
+            self.height += 1;
+        }
+    }
+
+    fn add_module(&mut self, modules: usize, module_width: usize, kind: u8) {
+        if kind != 0u8 && kind != 1u8 {
+            panic!("no valid bitmap value")
+        }
+        let first = (0..module_width * modules).map(|_| kind);
+        self.pixels.extend(first);
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum Element {
     Text {
@@ -165,23 +197,10 @@ impl BarcodeBuilder {
         let text_elements = if self.show_text {
             match self.symbology {
                 Symbology::Code39 => todo!(),
-                Symbology::Code128 => {
-                    let font_size = hri_ratios::CODE128 * bmp.width as f32;
-                    vec![Element::Text {
-                        x: self.x,
-                        y: self.y + bmp.height as f32 + font_size * 1.2,
-                        max_width: Some(bmp.width as f32),
-                        lines: 1,
-                        font: OCR_B.to_string(),
-                        font_size,
-                        content: self.data,
-                        alignment: Alignment::Left,
-                        justification: Justification::Center,
-                        y_reference: YReference::Baseline,
-                        inverted: false,
-                    }]
+                Symbology::Code128 => generate_code_128_text(self.x, self.y, &self.data, &bmp),
+                Symbology::Ean13 => {
+                    generate_ean13_text(self.x, self.y, &self.data, &bmp).unwrap_or_default()
                 }
-                Symbology::Ean13 => todo!(),
                 Symbology::Qr => todo!(),
                 Symbology::DataMatrix => todo!(),
             }

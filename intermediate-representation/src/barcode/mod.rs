@@ -7,7 +7,7 @@ mod ean13;
 pub mod hri_ratios {
     pub const CODE128: f32 = 0.06;
     pub const CODE39: f32 = 0.6;
-    pub const EAN13: f32 = 0.8; // EAN13 HRI spans almost full width
+    pub const EAN13: f32 = 0.07; // EAN13 HRI spans almost full width
     pub const DEFAULT: f32 = 0.5;
 }
 
