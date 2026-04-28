@@ -22,6 +22,15 @@ use crate::{
     commands::{CompressionMethod, CompressionType, GraficData, Orientation, ZplFormatCommand},
 };
 
+pub fn parse_lh(input: &str) -> IResult<&str, ZplFormatCommand> {
+    let (input, _) = tag("^LH")(input)?;
+    let (input, x) = opt(parse_usize).parse(input)?;
+    let x = x.unwrap_or_default();
+    let (input, y) = opt(preceded(char(','), opt(parse_usize))).parse(input)?;
+    let y = y.flatten().unwrap_or_default();
+    Ok((input, ZplFormatCommand::LabelHome { x, y }))
+}
+
 pub fn parse_pw(input: &str) -> IResult<&str, ZplFormatCommand> {
     let (input, _) = tag("^PW")(input)?;
     let (input, width) = parse_usize(input)?;
@@ -576,9 +585,12 @@ fn parse_xz(input: &str) -> IResult<&str, ()> {
 
 pub fn parse_command(input: &str) -> IResult<&str, ZplFormatCommand> {
     alt((
-        parse_fo, parse_fd, parse_a, parse_fg, parse_ft, parse_ll, parse_ls, parse_pw, parse_fs,
-        parse_cf, parse_gb, parse_fr, parse_by, parse_bc, parse_be, parse_ci, parse_fh, parse_fb,
-        parse_sl, parse_fc, parse_st, // add more commands here
+        alt((
+            parse_fo, parse_fd, parse_a, parse_fg, parse_ft, parse_ll, parse_ls, parse_pw,
+            parse_fs, parse_cf, parse_gb, parse_fr, parse_by, parse_bc, parse_be, parse_ci,
+            parse_fh, parse_fb, parse_sl, parse_fc, parse_st, // add up to 21 commands
+        )),
+        alt((parse_lh,)),
     ))
     .parse(input)
 }
@@ -666,10 +678,34 @@ mod tests {
         parse::{
             parse_a, parse_bc, parse_be, parse_by, parse_cf, parse_ci, parse_fb, parse_fc,
             parse_fd, parse_fg, parse_fh, parse_fo, parse_fr, parse_ft, parse_fx, parse_gb,
-            parse_ll, parse_ls, parse_md, parse_mm, parse_pq, parse_pw, parse_sl, parse_st,
-            parse_zpl, parse_zpl_intern,
+            parse_lh, parse_ll, parse_ls, parse_md, parse_mm, parse_pq, parse_pw, parse_sl,
+            parse_st, parse_zpl, parse_zpl_intern,
         },
     };
+
+    #[test]
+    fn parse_lh_with_empty_input() {
+        let input = "^LH^test";
+        let (remain, zpl) = parse_lh(input).unwrap();
+        assert_eq!(remain, "^test");
+        assert_eq!(zpl, ZplFormatCommand::LabelHome { x: 0, y: 0 });
+    }
+
+    #[test]
+    fn parse_lh_with_one_input() {
+        let input = "^LH123^test";
+        let (remain, zpl) = parse_lh(input).unwrap();
+        assert_eq!(remain, "^test");
+        assert_eq!(zpl, ZplFormatCommand::LabelHome { x: 123, y: 0 });
+    }
+
+    #[test]
+    fn parse_lh_with_two_inputs() {
+        let input = "^LH123,456^test";
+        let (remain, zpl) = parse_lh(input).unwrap();
+        assert_eq!(remain, "^test");
+        assert_eq!(zpl, ZplFormatCommand::LabelHome { x: 123, y: 456 });
+    }
 
     #[test]
     fn parse_ll_test() {

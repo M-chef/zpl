@@ -179,6 +179,10 @@ pub enum ClockFormat {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ZplFormatCommand {
+    LabelHome {
+        x: usize,
+        y: usize,
+    },
     LabelLength(usize),
     PrintWidth(usize),
     LabelShift(usize),

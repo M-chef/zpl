@@ -140,6 +140,8 @@ struct LabelSize {
 
 #[derive(Default)]
 struct InterpreterState {
+    x_offset: usize,
+    y_offset: usize,
     current_x: usize,
     current_y: usize,
     current_origin: Origin,
@@ -156,7 +158,7 @@ struct InterpreterState {
 
 impl InterpreterState {
     pub fn current_x(&self) -> usize {
-        self.current_x
+        self.x_offset + self.current_x
     }
 
     pub fn current_y(&self, element_height: usize) -> usize {
@@ -165,7 +167,7 @@ impl InterpreterState {
             Origin::Bottom => element_height,
         };
 
-        self.current_y - offset
+        self.y_offset + self.current_y - offset
     }
 }
 
@@ -182,6 +184,10 @@ pub fn interpret(cmds: &[ZplFormatCommand]) -> ZplLabel {
 
     for cmd in cmds {
         match cmd {
+            ZplFormatCommand::LabelHome { x, y } => {
+                state.x_offset = *x;
+                state.y_offset = *y;
+            }
             ZplFormatCommand::FieldOrigin {
                 x,
                 y,
@@ -388,6 +394,8 @@ pub fn interpret(cmds: &[ZplFormatCommand]) -> ZplLabel {
                         current_font_name: state.font.current_font_name,
                     },
                     label_size: state.label_size,
+                    x_offset: state.x_offset,
+                    y_offset: state.y_offset,
                     ..Default::default()
                 }
             }
