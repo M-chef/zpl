@@ -1,9 +1,8 @@
-// mod barcode;
 mod datetime;
 mod decode_image;
 
 use intermediate_representation::{
-    ADWAITA_MONO, Alignment, BarcodeBuilder, DecodedBitmap, Document, Element, Justification,
+    ADWAITA_MONO, Alignment, BarcodeBuilder, DecodedBitmap, Document, Dots, Element, Justification,
     OSWALD, Symbology, YReference, ean13_modules, estimate_code128_modules,
 };
 use zpl_parser::{
@@ -21,30 +20,30 @@ enum Origin {
 
 #[derive(Debug, Clone)]
 struct FieldBlock {
-    width: usize,
-    lines: usize,
+    width: Dots,
+    lines: u32,
     line_spacing: isize,
     justification: TextBlockJustification,
-    hanging_indent: usize,
+    hanging_indent: Dots,
 }
 
 struct BarcodeConfig {
     width: u8,
     width_ratio: f32,
-    height: usize,
+    height: Dots,
 }
 
 struct FontState {
-    current_font_height: f32,
-    current_font_width: f32,
+    current_font_height: Dots,
+    current_font_width: Dots,
     current_font_name: char,
 }
 
 impl Default for FontState {
     fn default() -> Self {
         Self {
-            current_font_height: 10.,
-            current_font_width: 10.,
+            current_font_height: Dots::from_unsigned(10),
+            current_font_width: Dots::from_unsigned(10),
             current_font_name: 'A',
         }
     }
@@ -54,27 +53,36 @@ impl Default for FontState {
 pub struct SetRealTimeClock {
     month: Option<u8>,
     day: Option<u8>,
-    year: Option<usize>,
+    year: Option<u32>,
     hour: Option<u8>,
     minute: Option<u8>,
     second: Option<u8>,
     format: ClockFormat,
 }
 
-#[derive(Default)]
 struct LabelSize {
-    total_width: Option<usize>,
-    total_height: Option<usize>,
-    current_width: usize,
-    current_height: usize,
+    total_width: Option<Dots>,
+    total_height: Option<Dots>,
+    current_width: Dots,
+    current_height: Dots,
 }
 
-#[derive(Default)]
+impl Default for LabelSize {
+    fn default() -> Self {
+        Self {
+            total_width: Default::default(),
+            total_height: Default::default(),
+            current_width: Dots::from_unsigned(0),
+            current_height: Dots::from_unsigned(0),
+        }
+    }
+}
+
 struct InterpreterState {
-    x_offset: f32,
-    y_offset: f32,
-    current_x: f32,
-    current_y: f32,
+    x_offset: Dots,
+    y_offset: Dots,
+    current_x: Dots,
+    current_y: Dots,
     current_origin: Origin,
     font: FontState,
     fieldblock_state: Option<FieldBlock>,
@@ -87,14 +95,35 @@ struct InterpreterState {
     label_size: LabelSize,
 }
 
+impl Default for InterpreterState {
+    fn default() -> Self {
+        Self {
+            x_offset: Dots::from_unsigned(0),
+            y_offset: Dots::from_unsigned(0),
+            current_x: Dots::from_unsigned(0),
+            current_y: Dots::from_unsigned(0),
+            current_origin: Default::default(),
+            font: Default::default(),
+            fieldblock_state: Default::default(),
+            current_justification: Default::default(),
+            inverted: Default::default(),
+            barcode_type: Default::default(),
+            barcode_config: Default::default(),
+            escape_chars: Default::default(),
+            real_time_clock_setup: Default::default(),
+            label_size: Default::default(),
+        }
+    }
+}
+
 impl InterpreterState {
-    pub fn current_x(&self) -> f32 {
+    pub fn current_x(&self) -> Dots {
         self.x_offset + self.current_x
     }
 
-    pub fn current_y(&self, element_height: f32) -> f32 {
+    pub fn current_y(&self, element_height: Dots) -> Dots {
         let offset = match self.current_origin {
-            Origin::Top => 0.,
+            Origin::Top => Dots::from_unsigned(0),
             Origin::Bottom => element_height,
         };
 
@@ -109,16 +138,16 @@ pub fn interpret(cmds: &[ZplFormatCommand]) -> Document {
     for cmd in cmds {
         match cmd {
             ZplFormatCommand::LabelHome { x, y } => {
-                state.x_offset = *x as f32;
-                state.y_offset = *y as f32;
+                state.x_offset = Dots::from_unsigned(*x);
+                state.y_offset = Dots::from_unsigned(*y);
             }
             ZplFormatCommand::FieldOrigin {
                 x,
                 y,
                 justification,
             } => {
-                state.current_x = *x as f32;
-                state.current_y = *y as f32;
+                state.current_x = Dots::from_unsigned(*x);
+                state.current_y = Dots::from_unsigned(*y);
                 state.current_justification = *justification;
             }
             ZplFormatCommand::FieldTypeset {
@@ -126,8 +155,8 @@ pub fn interpret(cmds: &[ZplFormatCommand]) -> Document {
                 y,
                 justification,
             } => {
-                state.current_x = *x as f32;
-                state.current_y = *y as f32;
+                state.current_x = Dots::from_unsigned(*x);
+                state.current_y = Dots::from_unsigned(*y);
                 state.current_origin = Origin::Bottom;
                 state.current_justification = *justification;
             }
@@ -137,13 +166,16 @@ pub fn interpret(cmds: &[ZplFormatCommand]) -> Document {
                     // get barcode height from current setting.
                     // if neither barcode type nor global barcode settings holds height
                     // use default `10` (see zpl spec)
-                    let barcode_height = barcode_type.height().unwrap_or(
-                        state
-                            .barcode_config
-                            .as_ref()
-                            .map(|conf| conf.height)
-                            .unwrap_or(10),
-                    );
+                    let barcode_height = barcode_type
+                        .height()
+                        .map(|h| Dots::from_unsigned(h))
+                        .unwrap_or(
+                            state
+                                .barcode_config
+                                .as_ref()
+                                .map(|conf| conf.height)
+                                .unwrap_or(Dots::from_unsigned(10)),
+                        );
                     // same for barcode width with default `2`
                     let module_width = state
                         .barcode_config
@@ -155,27 +187,27 @@ pub fn interpret(cmds: &[ZplFormatCommand]) -> Document {
                         BarcodeType::Code39 => todo!(),
                         BarcodeType::Code128 { .. } => {
                             let modules = estimate_code128_modules(&text);
-                            let target_width = modules as usize * module_width as usize;
+                            let target_width = modules as u32 * module_width as u32;
                             (Symbology::Code128, target_width)
                         }
                         BarcodeType::Pdf417 => todo!(),
                         BarcodeType::Ean8 => todo!(),
                         BarcodeType::Ean13 { .. } => {
                             let modules = ean13_modules(&text);
-                            let target_width = modules as usize * module_width as usize;
+                            let target_width = modules as u32 * module_width as u32;
                             (Symbology::Ean13, target_width)
                         }
                         BarcodeType::Qr => todo!(),
                         BarcodeType::DataMatrix => todo!(),
                     };
                     let elem = BarcodeBuilder {
-                        x: state.current_x(),
-                        y: state.current_y(barcode_height as f32),
+                        x: state.current_x().to_length(),
+                        y: state.current_y(barcode_height).to_length(),
                         symbology,
                         data: text.to_string(),
                         show_text: barcode_type.show_text(),
-                        width,
-                        heigth: barcode_height,
+                        width: Dots::from_unsigned(width).to_length(),
+                        heigth: barcode_height.to_length(),
                     };
                     let barcode_elements = elem.build();
                     elements.extend(barcode_elements);
@@ -191,19 +223,20 @@ pub fn interpret(cmds: &[ZplFormatCommand]) -> Document {
                         _ => ADWAITA_MONO,
                     };
                     let elem = Element::Text {
-                        x: state.current_x(),
-                        y: state.current_y(state.font.current_font_height),
+                        x: state.current_x().to_length(),
+                        y: state.current_y(state.font.current_font_height).to_length(),
                         font: font.to_string(),
                         max_width: state
                             .fieldblock_state
                             .as_ref()
-                            .map(|block| block.width as f32),
+                            .map(|block| block.width)
+                            .map(|width| width.to_length()),
                         lines: state
                             .fieldblock_state
                             .as_ref()
                             .map(|block| block.lines)
                             .unwrap_or(1),
-                        font_size: state.font.current_font_width,
+                        font_size: state.font.current_font_width.to_fontsize(),
                         content,
                         alignment: match state.current_justification {
                             ZplAlignment::Right => Alignment::Right,
@@ -225,8 +258,12 @@ pub fn interpret(cmds: &[ZplFormatCommand]) -> Document {
                     elements.push(elem);
                 };
             }
-            ZplFormatCommand::LabelLength(h) => state.label_size.total_height = Some(*h),
-            ZplFormatCommand::PrintWidth(w) => state.label_size.total_width = Some(*w),
+            ZplFormatCommand::LabelLength(h) => {
+                state.label_size.total_height = Some(Dots::from_unsigned(*h))
+            }
+            ZplFormatCommand::PrintWidth(w) => {
+                state.label_size.total_width = Some(Dots::from_unsigned(*w))
+            }
             ZplFormatCommand::LabelShift(_) => {}
             ZplFormatCommand::Font {
                 name,
@@ -235,8 +272,8 @@ pub fn interpret(cmds: &[ZplFormatCommand]) -> Document {
                 width,
             } => {
                 state.font.current_font_name = *name;
-                state.font.current_font_height = *height as f32;
-                state.font.current_font_width = *width as f32;
+                state.font.current_font_height = Dots::from_unsigned(*height);
+                state.font.current_font_width = Dots::from_unsigned(*width);
             }
             ZplFormatCommand::ChangeFont {
                 name,
@@ -244,8 +281,8 @@ pub fn interpret(cmds: &[ZplFormatCommand]) -> Document {
                 width,
             } => {
                 state.font.current_font_name = *name;
-                state.font.current_font_height = *height as f32;
-                state.font.current_font_width = *width as f32;
+                state.font.current_font_height = Dots::from_unsigned(*height);
+                state.font.current_font_width = Dots::from_unsigned(*width);
             }
             ZplFormatCommand::GraphicField {
                 compression_type,
@@ -267,8 +304,8 @@ pub fn interpret(cmds: &[ZplFormatCommand]) -> Document {
                     _ => DecodedBitmap::default(),
                 };
                 let elem = Element::Image {
-                    x: state.current_x(),
-                    y: state.current_y(height as f32),
+                    x: state.current_x().to_length(),
+                    y: state.current_y(Dots::from_unsigned(height)).to_length(),
                     bmp,
                 };
                 elements.push(elem)
@@ -281,11 +318,11 @@ pub fn interpret(cmds: &[ZplFormatCommand]) -> Document {
                 rounding,
             } => {
                 let elem = Element::Rectangle {
-                    x: state.current_x(),
-                    y: state.current_y(*height as f32),
-                    width: *width as f32,
-                    height: *height as f32,
-                    thickness: *thickness as f32,
+                    x: state.current_x().to_length(),
+                    y: state.current_y(Dots::from_unsigned(*height)).to_length(),
+                    width: Dots::from_unsigned(*width).to_length(),
+                    height: Dots::from_unsigned(*height).to_length(),
+                    thickness: Dots::from_unsigned(*thickness).to_length(),
                     color: match color {
                         zpl_parser::Color::Black => intermediate_representation::Color::Black,
                         zpl_parser::Color::White => intermediate_representation::Color::White,
@@ -304,7 +341,7 @@ pub fn interpret(cmds: &[ZplFormatCommand]) -> Document {
                 state.barcode_config = Some(BarcodeConfig {
                     width: *width,
                     width_ratio: *width_ratio,
-                    height: *height,
+                    height: Dots::from_unsigned(*height),
                 })
             }
             ZplFormatCommand::Barcode(barcode_type) => state.barcode_type = Some(*barcode_type),
@@ -318,11 +355,11 @@ pub fn interpret(cmds: &[ZplFormatCommand]) -> Document {
                 hanging_indent,
             } => {
                 state.fieldblock_state = Some(FieldBlock {
-                    width: *width,
+                    width: Dots::from_unsigned(*width),
                     lines: *lines,
                     line_spacing: *line_spacing,
                     justification: *justification,
-                    hanging_indent: *hanging_indent,
+                    hanging_indent: Dots::from_unsigned(*hanging_indent),
                 })
             }
             ZplFormatCommand::RealTimeClockMode { mode, language } => {}
@@ -376,8 +413,8 @@ pub fn interpret(cmds: &[ZplFormatCommand]) -> Document {
     }
 
     Document {
-        width: state.label_size.total_width,
-        height: state.label_size.total_height,
+        width: state.label_size.total_width.map(|w| w.to_length()),
+        height: state.label_size.total_height.map(|h| h.to_length()),
         elements: elements,
     }
 }

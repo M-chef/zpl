@@ -98,7 +98,7 @@ pub enum ClockMode {
     #[default]
     Start,
     Now,
-    Resolution(usize),
+    Resolution(u32),
 }
 
 impl From<&str> for ClockMode {
@@ -106,7 +106,7 @@ impl From<&str> for ClockMode {
         match value {
             "S" => ClockMode::Start,
             "T" => ClockMode::Now,
-            _ => match value.parse::<usize>() {
+            _ => match value.parse::<u32>() {
                 Ok(n) => ClockMode::Resolution(n),
                 Err(_) => ClockMode::Start,
             },
@@ -180,51 +180,51 @@ pub enum ClockFormat {
 #[derive(Debug, Clone, PartialEq)]
 pub enum ZplFormatCommand {
     LabelHome {
-        x: usize,
-        y: usize,
+        x: u32,
+        y: u32,
     },
-    LabelLength(usize),
-    PrintWidth(usize),
-    LabelShift(usize),
+    LabelLength(u32),
+    PrintWidth(u32),
+    LabelShift(u32),
     BarcodeConfig {
         width: u8,
         width_ratio: f32,
-        height: usize,
+        height: u32,
     },
     Barcode(super::BarcodeType),
     ChangeFont {
         name: char,
-        height: usize,
-        width: usize,
+        height: u32,
+        width: u32,
     },
     Font {
         name: char,
         orientation: Orientation,
-        height: usize,
-        width: usize,
+        height: u32,
+        width: u32,
     },
     FieldOrigin {
-        x: usize,
-        y: usize,
+        x: u32,
+        y: u32,
         justification: Alignment,
     },
     FieldTypeset {
-        x: usize,
-        y: usize,
+        x: u32,
+        y: u32,
         justification: Alignment,
     },
     FieldData(String),
     GraphicField {
         compression_type: CompressionType,
-        data_bytes: usize,
-        total_bytes: usize,
-        row_bytes: usize,
+        data_bytes: u32,
+        total_bytes: u32,
+        row_bytes: u32,
         data: GraficData,
     },
     GraphicalBox {
-        width: usize,
-        height: usize,
-        thickness: usize,
+        width: u32,
+        height: u32,
+        thickness: u32,
         color: Color,
         rounding: u8,
     },
@@ -237,11 +237,11 @@ pub enum ZplFormatCommand {
         mapping: HashMap<u8, u8>,
     },
     FieldBlock {
-        width: usize,
-        lines: usize,
+        width: u32,
+        lines: u32,
         line_spacing: isize,
         justification: TextBlockJustification,
-        hanging_indent: usize,
+        hanging_indent: u32,
     },
     RealTimeClockMode {
         mode: ClockMode,
@@ -256,7 +256,7 @@ pub enum ZplFormatCommand {
     SetRealTimeClock {
         month: Option<u8>,
         day: Option<u8>,
-        year: Option<usize>,
+        year: Option<u32>,
         hour: Option<u8>,
         minute: Option<u8>,
         second: Option<u8>,

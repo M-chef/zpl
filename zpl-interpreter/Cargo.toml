@@ -8,4 +8,3 @@ intermediate-representation = { path = "../intermediate-representation" }
 zpl-parser = { path = "../zpl-parser" }
 flate2 = { workspace = true }
 base64 = { workspace = true }
-rxing = { workspace = true }

@@ -7,4 +7,3 @@ edition = "2024"
 intermediate-representation = { path = "../intermediate-representation" }
 tiny-skia = { workspace = true }
 fontdue = { workspace = true }
-# image = { workspace = true }

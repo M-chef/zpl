@@ -51,9 +51,9 @@ fn replace_with_setup(
     min: u64,
     sec: u64,
     real_time_clock_setup: &SetRealTimeClock,
-) -> (usize, u8, u8, u8, u8, u8) {
+) -> (u32, u8, u8, u8, u8, u8) {
     (
-        real_time_clock_setup.year.unwrap_or(year as usize),
+        real_time_clock_setup.year.unwrap_or(year as u32),
         real_time_clock_setup.month.unwrap_or(month as u8),
         real_time_clock_setup.day.unwrap_or(day as u8),
         real_time_clock_setup.hour.unwrap_or(hour as u8),

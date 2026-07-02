@@ -126,8 +126,8 @@ impl DrawCommand {
 
 #[derive(Debug)]
 pub struct DrawDocument {
-    pub width: usize,
-    pub height: usize,
+    pub width: u32,
+    pub height: u32,
     pub elements: Vec<DrawCommand>,
 }
 
@@ -149,41 +149,41 @@ pub fn lower(doc: &Document, ctx: &LoweringContext) -> DrawDocument {
                 y_reference,
                 inverted,
             } => {
-                let mut bounds = ctx
-                    .fonts
-                    .measure_text_dimensions(&font, &content, *font_size);
+                let mut bounds =
+                    ctx.fonts
+                        .measure_text_dimensions(&font, &content, font_size.as_f32());
                 bounds.x = match alignment {
-                    Alignment::Left => *x as f32,
-                    Alignment::Right => *x as f32 - bounds.width,
+                    Alignment::Left => x.as_f32(),
+                    Alignment::Right => x.as_f32() - bounds.width,
                 };
                 if let Some(width) = max_width {
-                    bounds.width = *width
+                    bounds.width = width.as_f32()
                 }
                 let mut line_spacing = None;
                 // let mut justification = Justification::Left;
 
                 // First resolve both Y values
                 bounds.y = {
-                    let y = *y as f32;
+                    let y = y.as_f32();
                     let loaded_font = ctx.fonts.get(&font);
                     match y_reference {
                         YReference::Baseline => y,
                         YReference::CapHeight => {
                             let idx = loaded_font.font.lookup_glyph_index('H');
-                            let m = loaded_font.font.metrics_indexed(idx, *font_size);
+                            let m = loaded_font.font.metrics_indexed(idx, font_size.as_f32());
                             y + m.ymin as f32 + m.height as f32
                         }
                         YReference::Ascent => {
                             let lm = loaded_font
                                 .font
-                                .horizontal_line_metrics(*font_size)
+                                .horizontal_line_metrics(font_size.as_f32())
                                 .unwrap();
                             y + lm.ascent
                         }
                         YReference::Bottom => {
                             let lm = loaded_font
                                 .font
-                                .horizontal_line_metrics(*font_size)
+                                .horizontal_line_metrics(font_size.as_f32())
                                 .unwrap();
                             y + lm.descent
                         }
@@ -192,7 +192,7 @@ pub fn lower(doc: &Document, ctx: &LoweringContext) -> DrawDocument {
 
                 let glyphs = to_glyphs(
                     &font,
-                    *font_size,
+                    font_size.as_f32(),
                     bounds,
                     line_spacing,
                     *justification,
@@ -202,7 +202,7 @@ pub fn lower(doc: &Document, ctx: &LoweringContext) -> DrawDocument {
                 );
                 let com = DrawCommand::Text {
                     font: font.clone(),
-                    font_size: *font_size,
+                    font_size: font_size.as_f32(),
                     glyphs,
                     bold: false,
                     inverted: *inverted,
@@ -220,14 +220,14 @@ pub fn lower(doc: &Document, ctx: &LoweringContext) -> DrawDocument {
                 inverted,
             } => {
                 let bound = Rect {
-                    x: *x as f32,
-                    y: *y as f32,
-                    width: *width as f32,
-                    height: *height as f32,
+                    x: x.as_f32(),
+                    y: y.as_f32(),
+                    width: width.as_f32(),
+                    height: height.as_f32(),
                 };
                 let com = DrawCommand::Rectangle {
                     bounds: bound,
-                    line_thickness: *thickness as f32,
+                    line_thickness: thickness.as_f32(),
                     rounding: *rounding as f32,
                     color: *color,
                     inverted: *inverted,
@@ -236,75 +236,17 @@ pub fn lower(doc: &Document, ctx: &LoweringContext) -> DrawDocument {
             }
             Element::Image { x, y, bmp } => {
                 let bound = Rect {
-                    x: *x as f32,
-                    y: *y as f32,
-                    width: bmp.width as f32,
-                    height: bmp.height as f32,
+                    x: x.as_f32(),
+                    y: y.as_f32(),
+                    width: bmp.width.as_f32(),
+                    height: bmp.height.as_f32(),
                 };
                 let com = DrawCommand::BitMap {
                     bounds: bound,
                     data: bmp.pixels.clone(),
                 };
                 elements.push(com);
-            } // Element::Barcode {
-              //     x,
-              //     y,
-              //     symbology,
-              //     data,
-              //     show_text,
-              //     width,
-              //     heigth,
-              // } => {
-              //     let bmp = match symbology {
-              //         Symbology::Code39 => todo!(),
-              //         Symbology::Code128 => generate_code_128(width, heigth, &data),
-              //         Symbology::Ean13 => generate_ean13(width, heigth, &data),
-              //         Symbology::Qr => todo!(),
-              //         Symbology::DataMatrix => todo!(),
-              //     }
-              //     .unwrap_or_default();
-
-              //     let bound = Rect {
-              //         x: x as f32,
-              //         y: y as f32,
-              //         width: bmp.width as f32,
-              //         height: bmp.height as f32,
-              //     };
-              //     let com = DrawCommand::BitMap {
-              //         bounds: bound,
-              //         data: bmp.pixels,
-              //     };
-              //     elements.push(com);
-
-              //     let mut text_elements = Vec::new();
-              //     if show_text {
-              //         let com = match symbology {
-              //             Symbology::Code39 => todo!(),
-              //             Symbology::Code128 => {
-              //                 let bounds = Rect {
-              //                     x: x as f32,
-              //                     y: (y + bmp.height) as f32,
-              //                     width: bmp.width as f32,
-              //                     height: bmp.height as f32,
-              //                 };
-              //                 generate_code_128_text(&data, bounds, &ctx).unwrap_or_default()
-              //             }
-              //             Symbology::Ean13 => {
-              //                 let bounds = Rect {
-              //                     x: x as f32,
-              //                     y: (y + bmp.height) as f32,
-              //                     width: bmp.width as f32,
-              //                     height: bmp.height as f32,
-              //                 };
-              //                 generate_ean13_text(&data, bounds, &ctx).unwrap_or_default()
-              //             }
-              //             Symbology::Qr => todo!(),
-              //             Symbology::DataMatrix => todo!(),
-              //         };
-              //         text_elements.extend(com);
-              //     }
-              //     elements.extend(text_elements);
-              // }
+            }
         }
     }
 
@@ -317,28 +259,36 @@ pub fn lower(doc: &Document, ctx: &LoweringContext) -> DrawDocument {
     });
 
     DrawDocument {
-        width: doc.width.unwrap_or(current_width as usize),
-        height: doc.height.unwrap_or(current_height as usize),
+        width: doc
+            .width
+            .map(|w| w.as_i32() as u32)
+            .unwrap_or(current_width.round() as u32),
+        height: doc
+            .height
+            .map(|h| h.as_i32() as u32)
+            .unwrap_or(current_height.round() as u32),
         elements,
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use intermediate_representation::{Alignment, Element, Justification, YReference};
+    use intermediate_representation::{
+        Alignment, Dots, Element, FontSize, Justification, YReference,
+    };
 
     use crate::{ADWAITA_MONO, Document, FontStore, LoweringContext, RenderConfig, lower};
 
     #[test]
     fn should_align_text_right() {
-        let font_size = 10.;
+        let font_size = 10;
         let text = Element::Text {
-            x: 100.,
-            y: 0.,
+            x: Dots::from_unsigned(100).to_length(),
+            y: Dots::from_unsigned(0).to_length(),
             max_width: None,
             lines: 1,
             font: ADWAITA_MONO.to_string(),
-            font_size,
+            font_size: FontSize::from(Dots::from_unsigned(font_size).to_length()),
             content: "Test".to_string(),
             justification: Justification::Left,
             alignment: Alignment::Right,
@@ -347,8 +297,8 @@ mod tests {
         };
 
         let doc = Document {
-            width: Some(100),
-            height: Some(100),
+            width: Some(Dots::from_unsigned(100).to_length()),
+            height: Some(Dots::from_unsigned(100).to_length()),
             elements: vec![text],
         };
 

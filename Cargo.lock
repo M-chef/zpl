@@ -338,7 +338,6 @@ dependencies = [
 name = "intermediate-representation"
 version = "0.1.0"
 dependencies = [
- "fontdue",
  "rxing",
 ]
 
@@ -876,7 +875,6 @@ dependencies = [
  "base64",
  "flate2",
  "intermediate-representation",
- "rxing",
  "zpl-parser",
 ]
 

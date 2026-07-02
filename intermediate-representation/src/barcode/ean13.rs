@@ -4,12 +4,46 @@ use rxing::{BarcodeFormat, EncodeHintValue, EncodeHints, Writer, oned::EAN13Writ
 
 use crate::{
     Alignment, DecodedBitmap, Element, Justification, OCR_B, YReference,
-    barcode::bitmap_from_bitmatrix, hri_ratios,
+    barcode::bitmap_from_bitmatrix,
+    hri_ratios,
+    measure::{FontSize, Length},
 };
 
+impl DecodedBitmap {
+    fn enlarge_modules_for_ean13(&mut self, module_width: usize) {
+        for _ in 0..=(self.height.as_f32() / 10.) as usize {
+            self.add_module(1, module_width, 1u8);
+            self.add_module(1, module_width, 0u8);
+            self.add_module(1, module_width, 1u8);
+
+            self.add_module(43, module_width, 0u8);
+
+            self.add_module(1, module_width, 1u8);
+            self.add_module(1, module_width, 0u8);
+            self.add_module(1, module_width, 1u8);
+
+            self.add_module(43, module_width, 0u8);
+
+            self.add_module(1, module_width, 1u8);
+            self.add_module(1, module_width, 0u8);
+            self.add_module(1, module_width, 1u8);
+
+            self.height += 1.;
+        }
+    }
+
+    fn add_module(&mut self, modules: usize, module_width: usize, kind: u8) {
+        if kind != 0u8 && kind != 1u8 {
+            panic!("no valid bitmap value")
+        }
+        let first = (0..module_width * modules).map(|_| kind);
+        self.pixels.extend(first);
+    }
+}
+
 pub(crate) fn generate_ean13(
-    target_width: usize,
-    target_height: usize,
+    target_width: i32,
+    target_height: i32,
     content: &str,
 ) -> Result<DecodedBitmap, Box<dyn Error>> {
     let content = check_ean_content(content)?;
@@ -18,15 +52,12 @@ pub(crate) fn generate_ean13(
     let bitmatrix = writer.encode_with_hints(
         &content,
         &BarcodeFormat::EAN_13,
-        target_width as i32,
-        target_height as i32,
+        target_width,
+        target_height,
         &EncodeHints::default().with(EncodeHintValue::Margin("0".into())),
     )?;
 
     let module_width = target_width as f32 / ean13_modules(&content) as f32;
-    // let rows = bitmatrix.getRowSize();
-    // let last_row = bitmatrix.getRow(rows as u32);
-
     let mut bitmap = bitmap_from_bitmatrix(bitmatrix)?;
     bitmap.enlarge_modules_for_ean13(module_width as usize);
 
@@ -34,34 +65,33 @@ pub(crate) fn generate_ean13(
 }
 
 pub(crate) fn generate_ean13_text(
-    x: f32,
-    y: f32,
+    x: Length,
+    y: Length,
     data: &str,
     bmp: &DecodedBitmap,
 ) -> Result<Vec<Element>, Box<dyn Error>> {
     let data = check_ean_content(data)?;
-    let font_size = hri_ratios::EAN13 * bmp.width as f32;
+    let font_size = hri_ratios::EAN13 * bmp.width;
+    let y = y + bmp.height + font_size * 0.7;
+    let font_size: FontSize = font_size.into();
 
-    let y = y + bmp.height as f32 + font_size * 0.6;
     let first = Element::Text {
         x,
         y,
-        max_width: Some(bmp.width as f32),
+        max_width: Some(bmp.width),
         lines: 1,
         font: OCR_B.to_string(),
         font_size,
         content: data[0..1].to_string(),
-        // content: "test".to_string(),
         alignment: Alignment::Right,
         justification: Justification::Left,
         y_reference: YReference::Baseline,
         inverted: false,
     };
     let second = Element::Text {
-        // x: x + bmp.width as f32 / 4.,
         x,
         y,
-        max_width: Some(bmp.width as f32 / 2.),
+        max_width: Some(bmp.width / 2.),
         lines: 1,
         font: OCR_B.to_string(),
         font_size,
@@ -72,9 +102,9 @@ pub(crate) fn generate_ean13_text(
         inverted: false,
     };
     let third = Element::Text {
-        x: x + bmp.width as f32 / 2.,
+        x: x + bmp.width / 2.,
         y,
-        max_width: Some(bmp.width as f32 / 2.),
+        max_width: Some(bmp.width / 2.),
         lines: 1,
         font: OCR_B.to_string(),
         font_size,
@@ -88,100 +118,6 @@ pub(crate) fn generate_ean13_text(
 
     Ok(texts)
 }
-
-// pub(crate) fn generate_ean13_text(
-//     text: &str,
-//     bounds: Rect,
-//     ctx: &LoweringContext,
-// ) -> Result<Vec<DrawCommand>, Box<dyn Error>> {
-//     let var_name = OCR_B;
-//     let font = var_name;
-
-//     let text = check_ean_content(text)?;
-
-//     let hri_width = bounds.width * hri_ratios::EAN13;
-//     let font_size = fit_text_to_width(&text, font, hri_width, None, ctx);
-
-//     let elements = create_text_elements(&text, bounds, ctx, font, font_size)?;
-//     let mut boxes = {
-//         let second = elements.iter().nth(1).unwrap();
-//         let second_box = DrawCommand::FilledRect {
-//             bounds: second.screen_bounds(&ctx.fonts),
-//             rounding: 0.,
-//             color: crate::Color::White,
-//             inverted: false,
-//         };
-
-//         vec![second_box]
-//     };
-//     boxes.extend(elements);
-//     Ok(boxes)
-// }
-
-// fn create_text_elements(
-//     text: &str,
-//     bounds: Rect,
-//     ctx: &LoweringContext,
-//     font: &str,
-//     font_size: f32,
-// ) -> Result<Vec<DrawCommand>, Box<dyn Error>> {
-//     let y = bounds.y + 0.5 * font_size;
-
-//     let first = &text[0..1];
-//     let first_bounds = {
-//         let mut first_bounds = ctx.fonts.measure_text_dimensions(OCR_B, first, font_size);
-//         first_bounds.x = bounds.x - first_bounds.width;
-//         first_bounds.y = y;
-//         first_bounds
-//     };
-//     let first_text = create_text(first_bounds, ctx, font, font_size, first);
-
-//     let second = &text[1..7];
-//     let second_bounds = {
-//         let mut second_bounds = ctx.fonts.measure_text_dimensions(OCR_B, second, font_size);
-//         second_bounds.x = bounds.x + first_bounds.width;
-//         second_bounds.y = y;
-//         second_bounds
-//     };
-//     let second_text = create_text(second_bounds, ctx, font, font_size, second);
-
-//     let third = &text[7..];
-//     let third_bounds = {
-//         let mut third_bounds = ctx.fonts.measure_text_dimensions(OCR_B, second, font_size);
-//         third_bounds.x = bounds.x + bounds.width / 2. + font_size;
-//         third_bounds.y = y;
-//         third_bounds
-//     };
-//     let third_text = create_text(third_bounds, ctx, font, font_size, third);
-
-//     Ok(vec![first_text, second_text, third_text])
-// }
-
-// fn create_text(
-//     bounds: Rect,
-//     ctx: &LoweringContext,
-//     font: &str,
-//     font_size: f32,
-//     first: &str,
-// ) -> DrawCommand {
-//     let glyphs = to_glyphs(
-//         font,
-//         font_size,
-//         bounds,
-//         None,
-//         Justification::Center,
-//         YReference::Ascent,
-//         first,
-//         ctx,
-//     );
-//     DrawCommand::Text {
-//         font: font.to_string(),
-//         font_size,
-//         glyphs,
-//         bold: false,
-//         inverted: false,
-//     }
-// }
 
 pub fn ean13_modules(_data: &str) -> usize {
     // EAN-13 structure:
@@ -241,4 +177,86 @@ fn ean13_check_digit(ean12: &str) -> Result<u8, &'static str> {
 
     let check = (10 - (sum % 10)) % 10;
     Ok(check as u8)
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{
+        DecodedBitmap, Element, Length,
+        barcode::ean13::{check_ean_content, ean13_check_digit},
+        generate_ean13, generate_ean13_text,
+    };
+
+    #[test]
+    fn should_calculate_ean_check_digit() {
+        let ean12 = "123456789112";
+        let check = ean13_check_digit(ean12).unwrap();
+        assert_eq!(check, 5);
+    }
+
+    #[test]
+    fn should_error_on_less_than_12_digits() {
+        let ean11 = "12345678911";
+        assert!(ean13_check_digit(ean11).is_err());
+    }
+
+    #[test]
+    fn should_error_on_more_than_12_digits() {
+        let ean13 = "1234567891123";
+        assert!(ean13_check_digit(ean13).is_err());
+    }
+
+    #[test]
+    fn should_return_return_ean_untouched() {
+        let ean13 = "1234567891123";
+        let output = check_ean_content(ean13).unwrap();
+        assert_eq!(ean13, output);
+    }
+
+    #[test]
+    fn should_return_pad_ean_on_missing_digits() {
+        let input = "123456789";
+        let output = check_ean_content(input).unwrap();
+        assert_eq!("0001234567895", output);
+    }
+
+    #[test]
+    fn should_return_pad_ean_on_non_digits() {
+        let input = "1abc56789";
+        let output = check_ean_content(input).unwrap();
+        assert_eq!("0001000567890", output);
+    }
+
+    #[test]
+    fn should_correctly_split_ean_text() {
+        let ean13 = "1234567891123";
+        let texts =
+            generate_ean13_text(Length(1.), Length(2.), ean13, &DecodedBitmap::default()).unwrap();
+        let Element::Text { content, .. } = texts[0].clone() else {
+            panic!("invalid")
+        };
+        assert_eq!(content, "1");
+
+        let Element::Text { content, .. } = texts[1].clone() else {
+            panic!("invalid")
+        };
+        assert_eq!(content, "234567");
+
+        let Element::Text { content, .. } = texts[2].clone() else {
+            panic!("invalid")
+        };
+        assert_eq!(content, "891123");
+    }
+
+    #[test]
+    fn should_add_correct_num_of_row_to_ean() {
+        // width must be a multiple of 95
+        let bmp = generate_ean13(95, 15, "").unwrap();
+        assert_eq!(bmp.height, Length(17.));
+        assert_eq!(bmp.width, Length(95.));
+        assert_eq!(
+            bmp.pixels.len(),
+            (bmp.width.as_f32() * bmp.height.as_f32()) as usize
+        );
+    }
 }

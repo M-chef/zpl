@@ -7,7 +7,7 @@ use nom::{
     },
     character::complete::{
         alpha1, alphanumeric1, anychar, char, digit1, i8 as parse_i8, isize as parse_isize,
-        line_ending, multispace0, satisfy, u8 as parse_u8, usize as parse_usize,
+        line_ending, multispace0, satisfy, u8 as parse_u8, u32 as parse_u32, usize as parse_usize,
     },
     combinator::{complete, cut, map, not, opt, peek},
     error::{Error, ErrorKind},
@@ -24,28 +24,28 @@ use crate::{
 
 pub fn parse_lh(input: &str) -> IResult<&str, ZplFormatCommand> {
     let (input, _) = tag("^LH")(input)?;
-    let (input, x) = opt(parse_usize).parse(input)?;
+    let (input, x) = opt(parse_u32).parse(input)?;
     let x = x.unwrap_or_default();
-    let (input, y) = opt(preceded(char(','), opt(parse_usize))).parse(input)?;
+    let (input, y) = opt(preceded(char(','), opt(parse_u32))).parse(input)?;
     let y = y.flatten().unwrap_or_default();
     Ok((input, ZplFormatCommand::LabelHome { x, y }))
 }
 
 pub fn parse_pw(input: &str) -> IResult<&str, ZplFormatCommand> {
     let (input, _) = tag("^PW")(input)?;
-    let (input, width) = parse_usize(input)?;
+    let (input, width) = parse_u32(input)?;
     Ok((input, ZplFormatCommand::PrintWidth(width)))
 }
 
 pub fn parse_ll(input: &str) -> IResult<&str, ZplFormatCommand> {
     let (input, _) = tag("^LL")(input)?;
-    let (input, length) = parse_usize(input)?;
+    let (input, length) = parse_u32(input)?;
     Ok((input, ZplFormatCommand::LabelLength(length)))
 }
 
 pub fn parse_ls(input: &str) -> IResult<&str, ZplFormatCommand> {
     let (input, _) = tag("^LS")(input)?;
-    let (input, length) = parse_usize(input)?;
+    let (input, length) = parse_u32(input)?;
     Ok((input, ZplFormatCommand::LabelShift(length)))
 }
 
@@ -54,9 +54,9 @@ fn parse_cf(input: &str) -> IResult<&str, ZplFormatCommand> {
     let (input, (name, _, height, _, width)) = tuple((
         take(1u8),
         char(','),
-        opt(parse_usize),
+        opt(parse_u32),
         opt(char(',')),
-        opt(parse_usize),
+        opt(parse_u32),
     ))(input)?;
 
     let (height, width) = match (height, width) {
@@ -84,9 +84,9 @@ pub fn parse_a(input: &str) -> IResult<&str, ZplFormatCommand> {
         take(1u8),
         take(1u8),
         char(','),
-        parse_usize,
+        parse_u32,
         char(','),
-        parse_usize,
+        parse_u32,
     ))(input)?;
 
     let font = font.chars().next().unwrap_or('A');
@@ -102,13 +102,13 @@ pub fn parse_a(input: &str) -> IResult<&str, ZplFormatCommand> {
     ))
 }
 
-fn parse_coordinates(input: &str) -> IResult<&str, (usize, usize, Option<u8>)> {
+fn parse_coordinates(input: &str) -> IResult<&str, (u32, u32, Option<u8>)> {
     alt((
         map(
-            tuple((parse_usize, char(','), parse_usize, char(','), parse_u8)),
+            tuple((parse_u32, char(','), parse_u32, char(','), parse_u8)),
             |(x, _, y, _, z)| (x, y, Some(z)),
         ),
-        map(tuple((parse_usize, char(','), parse_usize)), |(x, _, y)| {
+        map(tuple((parse_u32, char(','), parse_u32)), |(x, _, y)| {
             (x, y, None)
         }),
     ))
@@ -155,11 +155,11 @@ pub fn parse_fg(input: &str) -> IResult<&str, ZplFormatCommand> {
     let (input, (compression_type, _, data_bytes, _, total_bytes, _, row_bytes, _)) = tuple((
         alpha1,
         char(','),
-        parse_usize,
+        parse_u32,
         char(','),
-        parse_usize,
+        parse_u32,
         char(','),
-        parse_usize,
+        parse_u32,
         char(','),
     ))(input)?;
 
@@ -198,11 +198,11 @@ fn parse_gb(input: &str) -> IResult<&str, ZplFormatCommand> {
     let (input, _) = tag("^GB")(input)?;
     let (input, graphical_box) = take_until("^FS")(input)?;
     let (_, (width, _, height, _, thickness, _, color, _, rounding)) = tuple((
-        opt(parse_usize),
+        opt(parse_u32),
         char(','),
-        opt(parse_usize),
+        opt(parse_u32),
         char(','),
-        opt(parse_usize),
+        opt(parse_u32),
         opt(char(',')),
         opt(alpha1),
         opt(char(',')),
@@ -239,7 +239,7 @@ fn parse_by(input: &str) -> IResult<&str, ZplFormatCommand> {
         opt(char(',')),
         opt(parse_float),
         opt(char(',')),
-        opt(parse_usize),
+        opt(parse_u32),
     ))(input)?;
 
     let width = width.unwrap_or(2);
@@ -289,7 +289,7 @@ fn parse_bc(input: &str) -> IResult<&str, ZplFormatCommand> {
                 let (_, params) = tuple((
                     opt(take(1usize)),
                     opt(char(',')),
-                    opt(parse_usize),
+                    opt(parse_u32),
                     opt(char(',')),
                     opt(alpha1),
                     opt(char(',')),
@@ -367,7 +367,7 @@ fn parse_be(input: &str) -> IResult<&str, ZplFormatCommand> {
             let (_, params) = tuple((
                 opt(take(1usize)),
                 opt(char(',')),
-                opt(parse_usize),
+                opt(parse_u32),
                 opt(char(',')),
                 opt(alpha1),
                 opt(char(',')),
@@ -459,11 +459,11 @@ fn parse_ci(input: &str) -> IResult<&str, ZplFormatCommand> {
 
 fn parse_fb(input: &str) -> IResult<&str, ZplFormatCommand> {
     let (input, _) = tag("^FB")(input)?;
-    let (input, width) = opt(parse_usize).parse(input)?;
-    let (input, lines) = opt((char(','), parse_usize)).parse(input)?;
+    let (input, width) = opt(parse_u32).parse(input)?;
+    let (input, lines) = opt((char(','), parse_u32)).parse(input)?;
     let (input, line_spacing) = opt((char(','), parse_isize)).parse(input)?;
     let (input, justification) = opt((char(','), alpha1)).parse(input)?;
-    let (input, hanging_indent) = opt((char(','), parse_usize)).parse(input)?;
+    let (input, hanging_indent) = opt((char(','), parse_u32)).parse(input)?;
 
     let width = width.unwrap_or(0);
     let lines = lines.map(|(_, l)| l).unwrap_or(0);
@@ -539,7 +539,7 @@ fn parse_st(input: &str) -> IResult<&str, ZplFormatCommand> {
     let day: Option<u8> = day.flatten().and_then(|n| n.parse().ok());
 
     let (input, year) = opt(preceded(char(','), opt(digit1))).parse(input)?;
-    let year: Option<usize> = year.flatten().and_then(|n| n.parse().ok());
+    let year: Option<u32> = year.flatten().and_then(|n| n.parse().ok());
 
     let (input, hour) = opt(preceded(char(','), opt(digit1))).parse(input)?;
     let hour = hour.flatten().and_then(|n| n.parse().ok());

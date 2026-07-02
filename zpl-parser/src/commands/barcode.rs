@@ -11,7 +11,7 @@ pub enum BarcodeType {
     Code39,
     Code128 {
         orientation: super::Orientation,
-        height: Option<usize>,
+        height: Option<u32>,
         show_text: bool,
         text_above: bool,
         check_digit: bool,
@@ -21,7 +21,7 @@ pub enum BarcodeType {
     Ean8,
     Ean13 {
         orientation: super::Orientation,
-        height: Option<usize>,
+        height: Option<u32>,
         show_text: bool,
         text_above: bool,
     },
@@ -30,7 +30,7 @@ pub enum BarcodeType {
 }
 
 impl BarcodeType {
-    pub fn height(&self) -> Option<usize> {
+    pub fn height(&self) -> Option<u32> {
         match self {
             BarcodeType::Code39 => todo!(),
             BarcodeType::Code128 { height, .. } => *height,

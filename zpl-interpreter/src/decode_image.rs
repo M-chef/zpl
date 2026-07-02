@@ -1,14 +1,14 @@
 use base64::{Engine, engine::general_purpose};
-use intermediate_representation::DecodedBitmap;
+use intermediate_representation::{DecodedBitmap, Dots};
 use zpl_parser::CompressionMethod;
 
 pub fn decode_zpl_graphic(
     // compression: CompressionType,
     compression_method: CompressionMethod,
     raw_data: &str,
-    width: usize,
-    height: usize,
-    bytes_per_row: usize,
+    width: u32,
+    height: u32,
+    bytes_per_row: u32,
 ) -> Result<DecodedBitmap, String> {
     // Step 1: Decode ASCII hex into bytes if needed
     let binary_data = match compression_method {
@@ -23,8 +23,8 @@ pub fn decode_zpl_graphic(
     let pixels = expand_monochrome_bitmap(&binary_data, width, height, bytes_per_row)?;
 
     Ok(DecodedBitmap {
-        width,
-        height,
+        width: Dots::from_unsigned(width).to_length(),
+        height: Dots::from_unsigned(width).to_length(),
         pixels,
     })
 }
@@ -66,9 +66,9 @@ fn decompress_zlib(data: &[u8]) -> Result<Vec<u8>, String> {
 
 fn expand_monochrome_bitmap(
     packed: &[u8],
-    width: usize,
-    height: usize,
-    bytes_per_row: usize,
+    width: u32,
+    height: u32,
+    bytes_per_row: u32,
 ) -> Result<Vec<u8>, String> {
     let expected = (bytes_per_row * height) as usize;
     if packed.len() < expected {

@@ -1,8 +1,11 @@
 mod barcode;
+// mod diagnostic;
 mod measure;
 
 pub use barcode::*;
-pub use measure::*;
+
+// pub use crate::diagnostic::*;
+pub use crate::measure::{Dots, FontSize, Length, Mm};
 
 pub const OSWALD: &'static str = "Oswald";
 pub const ADWAITA_MONO: &str = "AdwaitaMono";
@@ -75,8 +78,8 @@ pub enum YReference {
 
 #[derive(Clone, Default)]
 pub struct DecodedBitmap {
-    pub width: usize,
-    pub height: usize,
+    pub width: Length,
+    pub height: Length,
     pub pixels: Vec<u8>, // 0 = white, 1 = black
 }
 
@@ -90,47 +93,15 @@ impl std::fmt::Debug for DecodedBitmap {
     }
 }
 
-impl DecodedBitmap {
-    fn enlarge_modules_for_ean13(&mut self, module_width: usize) {
-        for _ in 0..=self.height / 15 {
-            self.add_module(1, module_width, 1u8);
-            self.add_module(1, module_width, 0u8);
-            self.add_module(1, module_width, 1u8);
-
-            self.add_module(43, module_width, 0u8);
-
-            self.add_module(1, module_width, 1u8);
-            self.add_module(1, module_width, 0u8);
-            self.add_module(1, module_width, 1u8);
-
-            self.add_module(43, module_width, 0u8);
-
-            self.add_module(1, module_width, 1u8);
-            self.add_module(1, module_width, 0u8);
-            self.add_module(1, module_width, 1u8);
-
-            self.height += 1;
-        }
-    }
-
-    fn add_module(&mut self, modules: usize, module_width: usize, kind: u8) {
-        if kind != 0u8 && kind != 1u8 {
-            panic!("no valid bitmap value")
-        }
-        let first = (0..module_width * modules).map(|_| kind);
-        self.pixels.extend(first);
-    }
-}
-
 #[derive(Debug, Clone)]
 pub enum Element {
     Text {
-        x: f32,
-        y: f32,
-        max_width: Option<f32>,
-        lines: usize,
+        x: Length,
+        y: Length,
+        max_width: Option<Length>,
+        lines: u32,
         font: String,
-        font_size: f32,
+        font_size: FontSize,
         content: String,
         alignment: Alignment,
         justification: Justification,
@@ -138,18 +109,18 @@ pub enum Element {
         inverted: bool,
     },
     Rectangle {
-        x: f32,
-        y: f32,
-        width: f32,
-        height: f32,
-        thickness: f32,
+        x: Length,
+        y: Length,
+        width: Length,
+        height: Length,
+        thickness: Length,
         color: Color,
         rounding: u8,
         inverted: bool,
     },
     Image {
-        x: f32,
-        y: f32,
+        x: Length,
+        y: Length,
         bmp: DecodedBitmap,
     },
 }
@@ -166,19 +137,19 @@ impl Element {
 
 #[derive(Debug)]
 pub struct Document {
-    pub width: Option<usize>,
-    pub height: Option<usize>,
+    pub width: Option<Length>,
+    pub height: Option<Length>,
     pub elements: Vec<Element>,
 }
 
 pub struct BarcodeBuilder {
-    pub x: f32,
-    pub y: f32,
+    pub x: Length,
+    pub y: Length,
     pub symbology: Symbology,
     pub data: String,
     pub show_text: bool,
-    pub width: usize,
-    pub heigth: usize,
+    pub width: Length,
+    pub heigth: Length,
 }
 
 impl BarcodeBuilder {
@@ -187,8 +158,12 @@ impl BarcodeBuilder {
 
         let bmp = match self.symbology {
             Symbology::Code39 => todo!(),
-            Symbology::Code128 => generate_code_128(self.width, self.heigth, &self.data),
-            Symbology::Ean13 => generate_ean13(self.width, self.heigth, &self.data),
+            Symbology::Code128 => {
+                generate_code_128(self.width.as_i32(), self.heigth.as_i32(), &self.data)
+            }
+            Symbology::Ean13 => {
+                generate_ean13(self.width.as_i32(), self.heigth.as_i32(), &self.data)
+            }
             Symbology::Qr => todo!(),
             Symbology::DataMatrix => todo!(),
         }
@@ -214,8 +189,8 @@ impl BarcodeBuilder {
             bmp,
         };
 
-        elements.push(dbg!(img));
-        elements.extend(dbg!(text_elements));
+        elements.push(img);
+        elements.extend(text_elements);
 
         elements
     }
